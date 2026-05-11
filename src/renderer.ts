@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__pawArrived";
-const SCRIPT_VERSION = 5;
+const SCRIPT_VERSION = 6;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -349,6 +349,23 @@ const PAGE_SCRIPT = `
       const c = getComputedStyle(el).cursor;
       return c === 'pointer' || c === 'grab' || c === 'grabbing';
     });
+    // Visibility filters — try to keep "I see it, it's clickable" in sync
+    // with "the human sees it, the human could click it." Common holes:
+    //  - opacity:0 on an ancestor (not inherited by computed style on child)
+    //  - pointer-events:none — element renders but swallows no events
+    //  - aria-hidden ancestor — element exists for layout but is non-interactive
+    //  - covered by a modal/sticky overlay — bbox visible but click goes to the cover
+    function effectiveOpacity(el) {
+      let op = 1;
+      let cur = el;
+      while (cur && cur.nodeType === 1) {
+        const o = parseFloat(getComputedStyle(cur).opacity);
+        op *= isNaN(o) ? 1 : o;
+        if (op < 0.05) return 0;
+        cur = cur.parentElement;
+      }
+      return op;
+    }
     direct.concat(pointers).forEach(function (el) {
       if (seen.has(el)) return;
       seen.add(el);
@@ -356,7 +373,21 @@ const PAGE_SCRIPT = `
       if (r.width < 2 || r.height < 2) return;
       const cs = getComputedStyle(el);
       if (cs.visibility === 'hidden' || cs.display === 'none' || cs.opacity === '0') return;
+      if (cs.pointerEvents === 'none') return;
       if (el.disabled) return;
+      if (el.closest('[aria-hidden="true"]')) return;
+      if (effectiveOpacity(el) < 0.05) return;
+      // Topmost-at-point check (viewport elements only). Catches the common
+      // "modal overlay covers everything underneath" case — without this,
+      // a closed-but-still-mounted modal's children show up as snapshot
+      // candidates that produce no click effect.
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const inView = cx >= 0 && cx <= window.innerWidth && cy >= 0 && cy <= window.innerHeight;
+      if (inView) {
+        const top = document.elementFromPoint(cx, cy);
+        if (top && top !== el && !el.contains(top) && !top.contains(el)) return;
+      }
       let role = el.getAttribute('role');
       if (!role) {
         const tag = el.tagName.toLowerCase();
