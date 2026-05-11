@@ -11,17 +11,23 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__pawArrived";
-const SCRIPT_VERSION = 7;
+const SCRIPT_VERSION = 8;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
-const PAGE_SCRIPT = `
+// Page script is per-install: cursor SVG + size are baked in so that
+// every Page.addScriptToEvaluateOnNewDocument re-run (page reload, SPA
+// navigate, etc.) renders the cursor on its own at document_start —
+// without waiting for the wrapper to make a first action. Was the
+// cause of "after F5 the cursor disappears until I hover again."
+function makePageScript(cursor: string, size: number): string {
+  return `
 (() => {
   if (window.__paw && window.__paw.v === ${SCRIPT_VERSION}) return;
   const ID = '__paw_cursor__';
   const STYLE_ID = '__paw_style__';
   let restTimer = null;
-  let lastSrc = '', lastSize = 32;
+  let lastSrc = ${JSON.stringify(cursor)}, lastSize = ${size};
   function clearRest() { if (restTimer) { clearTimeout(restTimer); restTimer = null; } }
   function scheduleRest() {
     clearRest();
@@ -742,8 +748,14 @@ const PAGE_SCRIPT = `
   }
   window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast, snapshotOverlay: snapshotOverlay, waitIdleSpinner: waitIdleSpinner, waitIdleSpinnerDone: waitIdleSpinnerDone, playStep: playStep, playStepDone: playStepDone, installSnapshotWatcher: installSnapshotWatcher };
   installSnapshotWatcher();
+  // Self-render the cursor at document_start so the body is visible on
+  // every fresh page — F5, navigation, SPA route change — without
+  // waiting for a first action from the wrapper. ensure() falls back to
+  // documentElement if document.body isn't parsed yet.
+  ensure(lastSrc, lastSize);
 })();
 `;
+}
 
 export interface RendererOptions {
   cursor: string;
@@ -778,14 +790,15 @@ export class CursorRenderer implements Renderer {
 
   async install(): Promise<void> {
     await this.client.send("Runtime.addBinding", { name: BINDING });
-    await this.client.send("Page.addScriptToEvaluateOnNewDocument", { source: PAGE_SCRIPT });
-    await this.client.send("Runtime.evaluate", { expression: PAGE_SCRIPT });
-    // Force the cursor element to materialize immediately. Page-side ensure()
-    // used to be lazy — only called from animate()/flash()/pressScale(), so a
-    // fresh session that never did a hover/click would have NO visible cursor
-    // until the first action. The whole "trust through visibility" thesis
-    // collapses if the body isn't on screen until AI does something. Render
-    // it on install, at last-known position (defaults to 0,0).
+    // Bake cursor SVG + size into the page script so it re-renders on every
+    // navigation without the wrapper having to know the page reloaded. The
+    // script self-calls ensure() at IIFE end.
+    const source = makePageScript(this.opts.cursor, this.opts.size);
+    await this.client.send("Page.addScriptToEvaluateOnNewDocument", { source });
+    await this.client.send("Runtime.evaluate", { expression: source });
+    // Safety net for the case where __paw is already on v=SCRIPT_VERSION from
+    // a previous install but no cursor element exists yet (the IIFE bails at
+    // the version-check before reaching the auto-ensure line). Idempotent.
     await this.client.send("Runtime.evaluate", {
       expression: `window.__paw && window.__paw.ensure(${JSON.stringify(this.opts.cursor)}, ${this.opts.size})`,
     });
