@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-examples/
+*.log
+.DS_Store
+screenshot.png
+*.dump
+.env
+.env.*
+PLAN-*.md

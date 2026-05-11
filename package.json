@@ -1,0 +1,38 @@
+{
+  "name": "pet-cursor",
+  "version": "0.2.0",
+  "description": "World's smallest visualized CDP CLI. AI types `pet click 1`, a cursor walks across the page on a bezier curve, then the real mouse event fires. Anti-ghost-cursor. Zero runtime dependencies.",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "pet": "bin/pet"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch"
+  },
+  "keywords": [
+    "cdp",
+    "chrome-devtools-protocol",
+    "cursor",
+    "automation",
+    "visualization",
+    "bezier",
+    "ai-agent",
+    "cli"
+  ],
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.3.0"
+  }
+}
