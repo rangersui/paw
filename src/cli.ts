@@ -234,6 +234,8 @@ const HELP = `paw — visualized CDP client. AI-driven, curl-shaped, depth-1.
   paw find <text> [--limit N]           list DOM elements whose text contains <text> (no mutation)
   paw set <target> <text|@file|->       write textContent/value on target (target can be N, sel, or text substring)
   paw edit [on|off]                     toggle document.designMode — whole page becomes editable
+  paw rewrite <old> <new>               source-level swap: scripts / src / href / action / [style] (frontend-fork prep)
+  paw save-to <url> [--token T]         PUT current outerHTML to URL with Bearer auth (the fork persist)
   paw stay                              pin cursor in place (no idle rest)
   paw unstay                            re-enable 5s idle rest
   paw auto                              (info) auto is the default
@@ -859,6 +861,63 @@ async function main(): Promise<number> {
       }, { readOnly: true });
       const preview = text.length > 100 ? text.slice(0, 97) + "..." : text;
       await audit(`say "${preview.replace(/"/g, '\\"')}"`);
+      return 0;
+    }
+
+    case "rewrite": {
+      // Global source rewrite — scan scripts/styles/src/href/action and
+      // replace every literal occurrence of <old> with <new>. The first
+      // half of the "frontend fork" trick: rewrite all fetch endpoints
+      // / CDN URLs / form actions on a page, then `paw save-to` the
+      // result to your elastik URL.
+      //
+      // Does NOT rewrite visible text (use `paw set` for that). Already-
+      // executed scripts don't re-run on textContent change — the rewrite
+      // matters in the saved/reloaded copy, not the current tab.
+      if (pos.length < 2) {
+        throw new Error("paw rewrite: usage `paw rewrite <old> <new>` (literal substrings, no regex)");
+      }
+      const oldStr = pos[0];
+      const newStr = pos[1];
+      const why = parseWhy(flags);
+      const count = await withSession(async (paw) => {
+        const prev = `${oldStr.slice(0, 20)} → ${newStr.slice(0, 20)}`;
+        await paw.toast(why || `🔀 rewrite ${prev}`);
+        return paw.rewrite(oldStr, newStr);
+      });
+      console.log(`rewrote ${count} occurrences: "${oldStr}" → "${newStr}"`);
+      await audit(withWhy(`rewrite "${oldStr.slice(0, 60).replace(/"/g, '\\"')}" → "${newStr.slice(0, 60).replace(/"/g, '\\"')}" (${count} hits)`, why));
+      return 0;
+    }
+
+    case "save-to": {
+      // Read current outerHTML + PUT to a URL with auth. The other half
+      // of the "frontend fork" trick. fetch happens Node-side (no CORS,
+      // clear errors). Reads body page-side via paw.outerHTML().
+      const url = pos[0];
+      if (!url) throw new Error("paw save-to: missing target URL");
+      const token = (flags.token as string) || process.env.PAW_ELASTIK_TOKEN || process.env.ELASTIK_WRITE_TOKEN;
+      const why = parseWhy(flags);
+      const html = await withSession(async (paw) => {
+        const target = url.length > 40 ? "..." + url.slice(-37) : url;
+        await paw.toast(why || `💾 save → ${target}`);
+        return paw.outerHTML();
+      }, { readOnly: true });
+      const headers: Record<string, string> = { "Content-Type": "text/html" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      let res: Response;
+      try {
+        res = await fetch(url, { method: "PUT", body: html, headers });
+      } catch (e: any) {
+        console.error(`paw save-to: fetch failed — ${e.message ?? e}`);
+        return 1 as any;
+      }
+      if (!res.ok) {
+        console.error(`paw save-to: PUT ${url} → ${res.status} ${res.statusText}`);
+        return 1 as any;
+      }
+      console.log(`saved ${html.length} bytes → ${url} (${res.status})`);
+      await audit(withWhy(`save-to ${url} (${html.length} bytes, status ${res.status})`, why));
       return 0;
     }
 

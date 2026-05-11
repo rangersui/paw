@@ -497,6 +497,34 @@ export class Paw {
   }
 
   /**
+   * Global source rewrite — scan inline scripts/styles + URL-bearing
+   * attributes, replace every occurrence of oldStr with newStr. Returns
+   * hit count. Used to prepare a page for "frontend fork": rewrite all
+   * fetch endpoints / CDN URLs / form actions, then `paw save-to` the
+   * outerHTML to your elastik URL. Anyone opening that URL gets the
+   * same UI talking to YOUR backend.
+   */
+  async rewrite(oldStr: string, newStr: string): Promise<number> {
+    const res = await this.client.send<{ result: { value: number } }>("Runtime.evaluate", {
+      expression: `window.__paw && window.__paw.rewriteAll(${JSON.stringify(oldStr)}, ${JSON.stringify(newStr)})`,
+      returnByValue: true,
+    });
+    return res.result?.value ?? 0;
+  }
+
+  /**
+   * Read current page outerHTML with doctype prefix. The artifact you'd
+   * PUT to elastik / write to a file / pipe through a transform.
+   */
+  async outerHTML(): Promise<string> {
+    const res = await this.client.send<{ result: { value: string } }>("Runtime.evaluate", {
+      expression: "'<!doctype html>\\n' + document.documentElement.outerHTML",
+      returnByValue: true,
+    });
+    return res.result?.value ?? "";
+  }
+
+  /**
    * Text-substring search across the DOM. Returns up to `limit` matches
    * with their tag, first 80 chars of normalized text, center coords,
    * and offscreen flag. Pure inspection — no mutation, no animation.

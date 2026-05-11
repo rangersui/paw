@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__pawArrived";
-const SCRIPT_VERSION = 10;
+const SCRIPT_VERSION = 11;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -643,6 +643,66 @@ function makePageScript(cursor: string, size: number): string {
     }
     return out;
   }
+  // Global source rewrite — scan inline <script> / <style> textContent
+  // and src/href/action/formaction attributes + [style] CSS, replacing
+  // every occurrence of oldStr with newStr. Returns the hit count.
+  //
+  // The point: prepare a page for "frontend fork." Save the rewritten
+  // outerHTML to elastik, anyone opening the elastik URL gets the same
+  // UI but talking to YOUR backend. Already-executed inline scripts
+  // don't re-run on textContent change — the rewrite only matters in
+  // the saved/reloaded copy, NOT the current tab.
+  //
+  // Deliberately does NOT rewrite text content of visible elements (that
+  // would corrupt the UI); use paw.setText for that.
+  function rewriteAll(oldStr, newStr) {
+    let count = 0;
+    const s = String(oldStr);
+    const r = String(newStr);
+    if (!s) return 0;
+    function replaceAttr(sel, attr) {
+      const list = document.querySelectorAll(sel);
+      for (let i = 0; i < list.length; i++) {
+        const el = list[i];
+        const v = el.getAttribute(attr);
+        if (v && v.indexOf(s) >= 0) {
+          el.setAttribute(attr, v.split(s).join(r));
+          count++;
+        }
+      }
+    }
+    // Inline JS in <script> (no src attribute = inline)
+    const scripts = document.querySelectorAll('script:not([src])');
+    for (let i = 0; i < scripts.length; i++) {
+      const txt = scripts[i].textContent || '';
+      if (txt.indexOf(s) >= 0) {
+        scripts[i].textContent = txt.split(s).join(r);
+        count++;
+      }
+    }
+    // Inline CSS in <style>
+    const styles = document.querySelectorAll('style');
+    for (let i = 0; i < styles.length; i++) {
+      const txt = styles[i].textContent || '';
+      if (txt.indexOf(s) >= 0) {
+        styles[i].textContent = txt.split(s).join(r);
+        count++;
+      }
+    }
+    // Attribute rewrites — src / href / action / formaction
+    replaceAttr('[src]', 'src');
+    replaceAttr('[href]', 'href');
+    replaceAttr('[action]', 'action');
+    replaceAttr('[formaction]', 'formaction');
+    replaceAttr('[data-src]', 'data-src');
+    // Inline style attribute (CSS url() and similar)
+    replaceAttr('[style]', 'style');
+    // <meta http-equiv="content-security-policy"> rewrites — useful when
+    // forking pages with strict CSP that would block rewritten inline scripts
+    // (caller can pass the full directive as old to override).
+    replaceAttr('meta[http-equiv]', 'content');
+    return count;
+  }
   // Set textContent or value on a target (resolved via resolveEl). For
   // <input>/<textarea> writes .value + fires 'input' event so reactive
   // frameworks re-render. For other elements writes textContent.
@@ -851,7 +911,7 @@ function makePageScript(cursor: string, size: number): string {
     }
     r.el.addEventListener('animationend', done);
   }
-  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast, snapshotOverlay: snapshotOverlay, waitIdleSpinner: waitIdleSpinner, waitIdleSpinnerDone: waitIdleSpinnerDone, playStep: playStep, playStepDone: playStepDone, installSnapshotWatcher: installSnapshotWatcher, findAllByText: findAllByText, setText: setText };
+  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast, snapshotOverlay: snapshotOverlay, waitIdleSpinner: waitIdleSpinner, waitIdleSpinnerDone: waitIdleSpinnerDone, playStep: playStep, playStepDone: playStepDone, installSnapshotWatcher: installSnapshotWatcher, findAllByText: findAllByText, setText: setText, rewriteAll: rewriteAll };
   installSnapshotWatcher();
   // Self-render the cursor at document_start so the body is visible on
   // every fresh page — F5, navigation, SPA route change — without
