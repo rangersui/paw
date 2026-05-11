@@ -181,6 +181,7 @@ const HELP = `paw — visualized CDP client. AI-driven, curl-shaped, depth-1.
   paw connect <port> [url-substring]    open session (writes ${STATE_FILE})
   paw close                             clear session file
   paw status                            one-line: host/port/url/title/cursor/last-action
+  paw tail [-n N]                       last N audit entries from ~/.pawprint (default 10, newest first)
   paw snapshot                          list ALL interactive elements (numbered)
   paw visible                           only elements in current viewport (what the human sees)
   paw show <text|sel>                   scrollIntoView a text substring or CSS selector
@@ -250,6 +251,15 @@ function parseArgs(argv: string[]): Flags {
       if (eq > 0) flags[a.slice(2, eq)] = a.slice(eq + 1);
       else if (i + 1 < argv.length && !argv[i + 1].startsWith("--")) flags[a.slice(2)] = argv[++i];
       else flags[a.slice(2)] = true;
+    } else if (a.length === 2 && /^-[a-zA-Z]$/.test(a)) {
+      // Short flag like -n. Single `-` (stdin marker) and `-123` (negative
+      // numbers for moveby) deliberately fall through to positional.
+      const key = a.slice(1);
+      if (i + 1 < argv.length && !argv[i + 1].startsWith("--") && !/^-[a-zA-Z]$/.test(argv[i + 1])) {
+        flags[key] = argv[++i];
+      } else {
+        flags[key] = true;
+      }
     } else {
       pos.push(a);
     }
@@ -372,6 +382,24 @@ async function main(): Promise<number> {
       clearState();
       console.log(`session cleared (${STATE_FILE})`);
       await audit("close");
+      return 0;
+    }
+
+    case "tail": {
+      // Reverse-read ~/.pawprint, newest first. trust-through-visibility
+      // depends on the human actually reading the log; this is the verb
+      // that makes that happen without forcing them out to the shell.
+      const n = flags.n ? parseInt(String(flags.n), 10) : (pos[0] ? parseInt(pos[0], 10) : 10);
+      if (Number.isNaN(n) || n <= 0) throw new Error("paw tail: -n must be a positive integer");
+      const lines = tailLines(LOG_FILE, n);
+      if (!lines.length) {
+        console.log("(empty — no pawprints yet)");
+        return 0;
+      }
+      // Newest first
+      for (const line of lines.slice().reverse()) {
+        console.log(line);
+      }
       return 0;
     }
 
