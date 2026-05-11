@@ -219,7 +219,7 @@ const HELP = `paw — visualized CDP client. AI-driven, curl-shaped, depth-1.
   paw stay                              pin cursor in place (no idle rest)
   paw unstay                            re-enable 5s idle rest
   paw auto                              (info) auto is the default
-  paw play                              interactive WASD (v1.5, not yet)
+  paw play [--step N]                   interactive WASD; Space=click nearest, Q=quit (step=30px default)
   paw help [verb]
 
 target = positive integer (snapshot/nearby index) or CSS selector
@@ -746,7 +746,7 @@ async function main(): Promise<number> {
 
     case "auto": {
       console.log("paw: auto mode is already the default. every verb runs autonomously without prompting.");
-      console.log("     use `paw play` for interactive WASD control (v1.5 — not yet implemented).");
+      console.log("     use `paw play` for interactive WASD control.");
       return 0;
     }
 
@@ -769,9 +769,80 @@ async function main(): Promise<number> {
     }
 
     case "play": {
-      console.error("paw play: interactive WASD game mode is on the v1.5 roadmap, not yet implemented.");
-      console.error("          for now, drive paw from any shell with paw click/type/etc.");
-      return 78;
+      // Minimal interactive mode: WASD walks the cursor, Space clicks the
+      // nearest interactive element, Q (or Ctrl-C) quits. Holds ONE CDP
+      // connection open for the whole session — unlike every other verb
+      // which opens-acts-closes per command.
+      if (!process.stdin.isTTY) {
+        console.error("paw play: requires a TTY (run from interactive shell, not pipe)");
+        return 1;
+      }
+      const s = loadState();
+      const paw = await connect({ wsUrl: s.WS_URL });
+
+      // Drain any HUMAN-TAKEOVER buffered before this session
+      const humanEntries = await paw.drainHumanLog();
+      for (const e of humanEntries) {
+        await audit(`grab (${e.from.x},${e.from.y}) → (${e.to.x},${e.to.y})`, "HUMAN-TAKEOVER", e.endTs);
+      }
+
+      const step = flags.step ? parseInt(String(flags.step), 10) : 30;
+      console.log(`paw play — WASD move (${step}px), Space click nearest, Q quit`);
+      await audit(`play started (step=${step}px)`);
+
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+      process.stdin.setEncoding("utf8");
+
+      let busy = false;
+      const quit = new Promise<void>((resolve) => {
+        const onData = async (key: string) => {
+          // Ctrl-C (0x03) or q/Q
+          if (key === "\u0003" || key === "q" || key === "Q") {
+            process.stdin.removeListener("data", onData);
+            resolve();
+            return;
+          }
+          if (busy) return;
+          busy = true;
+          try {
+            let dx = 0, dy = 0;
+            if (key === "w" || key === "W") dy = -step;
+            else if (key === "s" || key === "S") dy = step;
+            else if (key === "a" || key === "A") dx = -step;
+            else if (key === "d" || key === "D") dx = step;
+            else if (key === " ") {
+              const list = await paw.nearby(200, 1);
+              if (list.length) {
+                const target = list[0];
+                await paw.click(target.idx);
+                await audit(`play click [${target.idx}] ${target.role} "${target.name.slice(0, 40)}"`);
+                process.stdout.write(`\rclicked [${target.idx}] ${target.role} "${target.name.slice(0, 40)}"\n`);
+              } else {
+                process.stdout.write(`\rno interactive element within 200px\n`);
+              }
+              return;
+            } else {
+              return;
+            }
+            const r = await paw.moveBy(dx, dy);
+            process.stdout.write(`\rcursor=(${Math.round(r.x)},${Math.round(r.y)})     `);
+          } catch (e: any) {
+            process.stdout.write(`\nerror: ${e.message ?? e}\n`);
+          } finally {
+            busy = false;
+          }
+        };
+        process.stdin.on("data", onData);
+      });
+
+      await quit;
+      try { process.stdin.setRawMode(false); } catch {}
+      process.stdin.pause();
+      await paw.close();
+      console.log("\npaw play: exited");
+      await audit("play ended");
+      return 0;
     }
 
     default:
