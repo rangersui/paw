@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__pawArrived";
-const SCRIPT_VERSION = 4;
+const SCRIPT_VERSION = 5;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -512,6 +512,52 @@ const PAGE_SCRIPT = `
     window.__paw_hl_el = null;
     window.__paw_hl_prev = null;
   }
+  // play step: in one CDP round-trip, snap the cursor by (dx, dy), find
+  // the nearest interactive within radius, and re-highlight it if changed.
+  // The whole point is to keep interactive WASD feeling like a game — at
+  // OS key-repeat rate (~30/sec) we can't afford 3 CDP calls per tick.
+  function playStep(dx, dy, radius) {
+    radius = radius || 200;
+    const sz = lastSize || 32;
+    const cur = window.__paw_pos || { x: 0, y: 0 };
+    const tgt = clampPos(cur.x + dx, cur.y + dy);
+    const el = document.getElementById(ID);
+    if (el) {
+      el.style.animation = 'none';
+      el.style.transform = 'translate(' + tgt.x + 'px,' + tgt.y + 'px) scale(1)';
+    }
+    window.__paw_pos = tgt;
+    window.__paw_resting = false;
+    clearRest();
+    if (!window.__paw_snapshot) snapshot();
+    const snap = window.__paw_snapshot || [];
+    let best = null, bestDist = Infinity;
+    const cx = tgt.x + sz / 2, cy = tgt.y + sz / 2;
+    for (let i = 1; i < snap.length; i++) {
+      const e = snap[i];
+      if (!e || e.offscreen) continue;
+      const d = Math.hypot(e.x - cx, e.y - cy);
+      if (d < radius && d < bestDist) { best = i; bestDist = d; }
+    }
+    if (best !== window.__paw_play_hl) {
+      if (window.__paw_play_hl != null) unhighlight();
+      if (best != null) highlight(best, '#fbbf24');
+      window.__paw_play_hl = best;
+    }
+    let info = null;
+    if (best != null) {
+      const e = snap[best];
+      info = { idx: best, role: e.role, name: e.name, dist: Math.round(bestDist) };
+    }
+    return { x: tgt.x, y: tgt.y, nearest: info };
+  }
+  function playStepDone() {
+    if (window.__paw_play_hl != null) {
+      unhighlight();
+      window.__paw_play_hl = null;
+    }
+  }
+
   // wait-idle spinner: live-update pill next to the cursor showing the
   // current __paw_inflight count. Replaces "10 seconds of nothing" with
   // "10 seconds of 'waiting for 3 requests'". Self-polls from page side
@@ -627,7 +673,7 @@ const PAGE_SCRIPT = `
     }
     r.el.addEventListener('animationend', done);
   }
-  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast, snapshotOverlay: snapshotOverlay, waitIdleSpinner: waitIdleSpinner, waitIdleSpinnerDone: waitIdleSpinnerDone };
+  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast, snapshotOverlay: snapshotOverlay, waitIdleSpinner: waitIdleSpinner, waitIdleSpinnerDone: waitIdleSpinnerDone, playStep: playStep, playStepDone: playStepDone };
 })();
 `;
 

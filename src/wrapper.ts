@@ -423,6 +423,43 @@ export class Paw {
     });
   }
 
+  /**
+   * Interactive-play single step: snap cursor + spot-nearest + highlight,
+   * one CDP round-trip. Returns the new position and which element (if any)
+   * is now the candidate for Space-click. `buttons` is passed to the
+   * subsequent mouseMoved dispatch so drag-mode (button held) works during
+   * keyboard-driven moves.
+   */
+  async playStep(
+    dx: number,
+    dy: number,
+    radius = 200,
+    buttons = 0,
+  ): Promise<{ x: number; y: number; nearest: { idx: number; role: string; name: string; dist: number } | null }> {
+    const res = await this.client.send<{ result: { value: any } }>("Runtime.evaluate", {
+      expression: `window.__paw && window.__paw.playStep(${dx}, ${dy}, ${radius})`,
+      returnByValue: true,
+    });
+    const v = res.result?.value;
+    if (!v) throw new Error("paw: playStep returned no result (page script not installed?)");
+    await this.client.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: v.x,
+      y: v.y,
+      button: "none",
+      buttons,
+    });
+    this.animator.setPosition({ x: v.x, y: v.y });
+    return v;
+  }
+
+  /** Clear the play-mode highlight (call on exit). */
+  async playStepDone(): Promise<void> {
+    await this.client.send("Runtime.evaluate", {
+      expression: `window.__paw && window.__paw.playStepDone()`,
+    });
+  }
+
   /** True while the human is Alt+dragging the cursor in the browser. */
   async humanGrabbing(): Promise<boolean> {
     return await this.eval<boolean>("!!window.__paw_human_grabbing");

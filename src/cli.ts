@@ -234,7 +234,7 @@ const HELP = `paw — visualized CDP client. AI-driven, curl-shaped, depth-1.
   paw stay                              pin cursor in place (no idle rest)
   paw unstay                            re-enable 5s idle rest
   paw auto                              (info) auto is the default
-  paw play [--step N]                   interactive WASD; Space=click nearest, Q=quit (step=30px default)
+  paw play [--step N] [--radius N]      8-way (WASD+QEZC), Space=click nearest-highlighted, F=drag-toggle, Esc=quit
   paw help [verb]
 
 target = positive integer (snapshot/nearby index) or CSS selector
@@ -876,10 +876,11 @@ async function main(): Promise<number> {
     }
 
     case "play": {
-      // Minimal interactive mode: WASD walks the cursor, Space clicks the
-      // nearest interactive element, Q (or Ctrl-C) quits. Holds ONE CDP
-      // connection open for the whole session — unlike every other verb
-      // which opens-acts-closes per command.
+      // Interactive mode: 8-way WASD+QEZC, page-side snap (no bezier walk —
+      // OS key-repeat hits ~30/sec, the 400ms bezier per step is what made
+      // v1 feel laggy). Nearest interactive element is highlighted yellow
+      // in real-time so Space-click stops being mystery-meat. F toggles a
+      // sticky press for drag/slider interaction. Esc or Ctrl-C quits.
       if (!process.stdin.isTTY) {
         console.error("paw play: requires a TTY (run from interactive shell, not pipe)");
         return 1;
@@ -887,25 +888,63 @@ async function main(): Promise<number> {
       const s = loadState();
       const paw = await connect({ wsUrl: s.WS_URL });
 
-      // Drain any HUMAN-TAKEOVER buffered before this session
+      // Drain HUMAN-TAKEOVER buffered before this session
       const humanEntries = await paw.drainHumanLog();
       for (const e of humanEntries) {
         await audit(`grab (${e.from.x},${e.from.y}) → (${e.to.x},${e.to.y})`, "HUMAN-TAKEOVER", e.endTs);
       }
 
-      const step = flags.step ? parseInt(String(flags.step), 10) : 30;
-      console.log(`paw play — WASD move (${step}px), Space click nearest, Q quit`);
-      await audit(`play started (step=${step}px)`);
+      const step = flags.step ? parseInt(String(flags.step), 10) : 40;
+      const radius = flags.radius ? parseInt(String(flags.radius), 10) : 200;
+
+      // Snapshot once so "nearest interactive" lookup has data immediately.
+      // R refreshes it, and Space-click also auto-refreshes (DOM likely changed).
+      await paw.snapshot();
+
+      console.log(`paw play — step ${step}px, highlight radius ${radius}px`);
+      console.log(`  W/A/S/D    cardinals    Q/E/Z/C    diagonals`);
+      console.log(`  Space      click nearest (highlighted yellow)`);
+      console.log(`  F          toggle drag mode (sticky press; WASD drags)`);
+      console.log(`  R          refresh snapshot (if DOM changed mid-play)`);
+      console.log(`  Esc / ^C   quit`);
+      await audit(`play started (step=${step}px radius=${radius}px)`);
 
       process.stdin.setRawMode(true);
       process.stdin.resume();
       process.stdin.setEncoding("utf8");
 
       let busy = false;
+      let dragMode = false;
+
+      // 8-way directional map. Diagonal steps move `step` in both axes
+      // (slightly faster diagonal speed; standard roguelike convention).
+      const dirs: Record<string, [number, number]> = {
+        w: [0, -1], W: [0, -1],
+        s: [0, 1],  S: [0, 1],
+        a: [-1, 0], A: [-1, 0],
+        d: [1, 0],  D: [1, 0],
+        q: [-1, -1], Q: [-1, -1],
+        e: [1, -1],  E: [1, -1],
+        z: [-1, 1],  Z: [-1, 1],
+        c: [1, 1],   C: [1, 1],
+      };
+
+      const renderStatus = (
+        nearest: { idx: number; role: string; name: string; dist: number } | null,
+        pos: { x: number; y: number },
+      ) => {
+        const p = `(${Math.round(pos.x)},${Math.round(pos.y)})`;
+        const mode = dragMode ? "DRAG " : "     ";
+        const near = nearest
+          ? `→ [${nearest.idx}] ${nearest.role} "${nearest.name.slice(0, 30)}" (${nearest.dist}px)`
+          : "→ (nothing within radius)";
+        process.stdout.write("\r" + `${mode}cursor=${p}  ${near}`.padEnd(90));
+      };
+
       const quit = new Promise<void>((resolve) => {
         const onData = async (key: string) => {
-          // Ctrl-C (0x03) or q/Q
-          if (key === "\u0003" || key === "q" || key === "Q") {
+          // Esc () or Ctrl-C ()
+          if (key === "" || key === "") {
             process.stdin.removeListener("data", onData);
             resolve();
             return;
@@ -913,29 +952,53 @@ async function main(): Promise<number> {
           if (busy) return;
           busy = true;
           try {
-            let dx = 0, dy = 0;
-            if (key === "w" || key === "W") dy = -step;
-            else if (key === "s" || key === "S") dy = step;
-            else if (key === "a" || key === "A") dx = -step;
-            else if (key === "d" || key === "D") dx = step;
-            else if (key === " ") {
-              const list = await paw.nearby(200, 1);
-              if (list.length) {
-                const target = list[0];
-                await paw.click(target.idx);
-                await audit(`play click [${target.idx}] ${target.role} "${target.name.slice(0, 40)}"`);
-                process.stdout.write(`\rclicked [${target.idx}] ${target.role} "${target.name.slice(0, 40)}"\n`);
+            // Drag-mode toggle composes the press/release primitives so
+            // sliders, scrollbars, range inputs work from the keyboard.
+            // (paw.press/release ARE separate primitives; click happens to
+            // bind them. This makes that explicit at the play layer.)
+            if (key === "f" || key === "F") {
+              if (dragMode) {
+                await paw.release();
+                dragMode = false;
+                process.stdout.write("\r" + "[release — drag mode OFF]".padEnd(90) + "\n");
+                await audit("play release");
               } else {
-                process.stdout.write(`\rno interactive element within 200px\n`);
+                await paw.press();
+                dragMode = true;
+                process.stdout.write("\r" + "[press — drag mode ON, WASD now drags]".padEnd(90) + "\n");
+                await audit("play press");
               }
               return;
-            } else {
+            }
+            if (key === "r" || key === "R") {
+              await paw.snapshot();
+              process.stdout.write("\r" + "[snapshot refreshed]".padEnd(90) + "\n");
               return;
             }
-            const r = await paw.moveBy(dx, dy);
-            process.stdout.write(`\rcursor=(${Math.round(r.x)},${Math.round(r.y)})     `);
+            if (key === " ") {
+              const list = await paw.nearby(radius, 1);
+              if (list.length) {
+                const target = list[0];
+                // Clear play highlight first so click ceremony's highlight
+                // doesn't save the YELLOW state and restore it later.
+                await paw.playStepDone();
+                await paw.click(target.idx);
+                await audit(`play click [${target.idx}] ${target.role} "${target.name.slice(0, 40)}"`);
+                process.stdout.write("\r" + `[clicked [${target.idx}] ${target.role} "${target.name.slice(0, 40)}"]`.padEnd(90) + "\n");
+                // DOM may have changed — refresh snapshot for next move's nearest lookup
+                await paw.snapshot();
+              } else {
+                process.stdout.write("\r" + `[no interactive element within ${radius}px]`.padEnd(90) + "\n");
+              }
+              return;
+            }
+            const dir = dirs[key];
+            if (!dir) return;
+            const [ux, uy] = dir;
+            const r = await paw.playStep(ux * step, uy * step, radius, dragMode ? 1 : 0);
+            renderStatus(r.nearest, { x: r.x, y: r.y });
           } catch (e: any) {
-            process.stdout.write(`\nerror: ${e.message ?? e}\n`);
+            process.stdout.write(`\n[error: ${e.message ?? e}]\n`);
           } finally {
             busy = false;
           }
@@ -944,6 +1007,11 @@ async function main(): Promise<number> {
       });
 
       await quit;
+      // Cleanup: release any sticky press (stuck mouseDown across paw
+      // invocations would deadlock the next mutating verb), drop play-mode
+      // highlight, restore terminal.
+      try { if (dragMode) await paw.release(); } catch {}
+      try { await paw.playStepDone(); } catch {}
       try { process.stdin.setRawMode(false); } catch {}
       process.stdin.pause();
       await paw.close();
