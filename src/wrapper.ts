@@ -164,7 +164,45 @@ export class PetCursor {
   }
 
   async moveTo(x: number, y: number): Promise<void> {
-    await this.animator.moveTo({ x, y });
+    if (this.silent) {
+      await this.dispatch("mouseMoved", x, y, "none", 0);
+      this.animator.setPosition({ x, y });
+      return;
+    }
+    // Page-side press state survives across pet invocations. If a previous
+    // `pet press` is still active, every subsequent move must dispatch
+    // mouseMoved events in lockstep so the dragged element follows along.
+    const pressed = await this.eval<{ button: string; buttons: number } | null>("window.__pet_pressed || null");
+    if (pressed) {
+      await this.animator.moveTo({ x, y }, { duration: this.pace.move, dispatchMouseEvents: true, buttons: pressed.buttons });
+    } else {
+      await this.animator.moveTo({ x, y }, { duration: this.pace.move });
+      // Land a mouseMoved at the endpoint so the page knows the mouse arrived.
+      await this.dispatch("mouseMoved", x, y, "none", 0);
+    }
+  }
+
+  async moveBy(dx: number, dy: number): Promise<{ x: number; y: number }> {
+    const p = this.animator.position();
+    const nx = p.x + dx;
+    const ny = p.y + dy;
+    await this.moveTo(nx, ny);
+    return { x: nx, y: ny };
+  }
+
+  async press(button: MouseButton = "left"): Promise<void> {
+    const p = this.animator.position();
+    await this.dispatch("mousePressed", p.x, p.y, button, 1);
+    const buttons = button === "left" ? 1 : button === "right" ? 2 : 4;
+    await this.client.send("Runtime.evaluate", {
+      expression: `window.__pet_pressed = { button: ${JSON.stringify(button)}, buttons: ${buttons} }`,
+    });
+  }
+
+  async release(button: MouseButton = "left"): Promise<void> {
+    const p = this.animator.position();
+    await this.dispatch("mouseReleased", p.x, p.y, button, 1);
+    await this.client.send("Runtime.evaluate", { expression: "window.__pet_pressed = null" });
   }
 
   async click(target: Target, button: MouseButton = "left"): Promise<void> {

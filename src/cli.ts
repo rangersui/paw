@@ -176,6 +176,12 @@ const HELP = `pet — visualized CDP client. AI-driven, curl-shaped, depth-1.
   pet drag <from> <to>                  press → move-with-button → release
   pet scroll <up|down|left|right> [px]
 
+  cursor as a first-class object (compose any motion):
+  pet move <x> <y> [--speed S]          cursor walks to absolute viewport coords
+  pet moveby <dx> <dy>                  cursor walks by relative offset
+  pet press [--right|--middle]          mouseDown at current cursor pos
+  pet release [--right|--middle]        mouseUp at current cursor pos
+
   pet goto <url>                        Page.navigate (waits for load)
   pet eval <expr|@file.js|->            Runtime.evaluate; expr from file (@) or stdin (-)
   pet screenshot [path]                 default: ./screenshot.png
@@ -525,6 +531,51 @@ async function main(): Promise<number> {
       await withSession(async (pet) => {
         const p = pet.position();
         console.log(`x=${Math.round(p.x)} y=${Math.round(p.y)}`);
+      });
+      return 0;
+    }
+
+    case "move": {
+      const x = parseInt(pos[0], 10);
+      const y = parseInt(pos[1], 10);
+      if (Number.isNaN(x) || Number.isNaN(y)) throw new Error("pet move: requires <x> <y> integers");
+      const pace = parsePace(flags);
+      await withSession(async (pet) => {
+        await pet.moveTo(x, y);
+        await audit(`move (${x},${y})`);
+      }, { pace, silent: parseSilent(flags) });
+      return 0;
+    }
+
+    case "moveby": {
+      const dx = parseInt(pos[0], 10);
+      const dy = parseInt(pos[1], 10);
+      if (Number.isNaN(dx) || Number.isNaN(dy)) throw new Error("pet moveby: requires <dx> <dy> integers");
+      const pace = parsePace(flags);
+      await withSession(async (pet) => {
+        const result = await pet.moveBy(dx, dy);
+        console.log(`x=${Math.round(result.x)} y=${Math.round(result.y)}`);
+        await audit(`moveby (${dx},${dy}) → (${Math.round(result.x)},${Math.round(result.y)})`);
+      }, { pace, silent: parseSilent(flags) });
+      return 0;
+    }
+
+    case "press": {
+      const button = flags.right ? "right" : flags.middle ? "middle" : "left";
+      await withSession(async (pet) => {
+        await pet.press(button as any);
+        const p = pet.position();
+        await audit(`press ${button} at (${Math.round(p.x)},${Math.round(p.y)})`);
+      });
+      return 0;
+    }
+
+    case "release": {
+      const button = flags.right ? "right" : flags.middle ? "middle" : "left";
+      await withSession(async (pet) => {
+        await pet.release(button as any);
+        const p = pet.position();
+        await audit(`release ${button} at (${Math.round(p.x)},${Math.round(p.y)})`);
       });
       return 0;
     }
