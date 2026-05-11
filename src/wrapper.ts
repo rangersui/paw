@@ -396,6 +396,21 @@ export class Paw {
     );
   }
 
+  /**
+   * Show a 1.5s speech-bubble next to the cursor. The intent surface for
+   * `--why`, `paw say`, and the eval read/write icon. Read time (~300ms)
+   * is awaited so the human can register the bubble before the action
+   * proceeds; the rest of the lifetime runs on a page-side timer that
+   * survives CDP disconnect.
+   */
+  async toast(text: string, readMs = 300): Promise<void> {
+    if (this.silent) return;
+    await this.client.send("Runtime.evaluate", {
+      expression: `window.__paw && window.__paw.toast(${JSON.stringify(text)})`,
+    });
+    if (readMs > 0) await sleep(readMs);
+  }
+
   /** True while the human is Alt+dragging the cursor in the browser. */
   async humanGrabbing(): Promise<boolean> {
     return await this.eval<boolean>("!!window.__paw_human_grabbing");

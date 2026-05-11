@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__pawArrived";
-const SCRIPT_VERSION = 1;
+const SCRIPT_VERSION = 2;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -512,6 +512,33 @@ const PAGE_SCRIPT = `
     window.__paw_hl_el = null;
     window.__paw_hl_prev = null;
   }
+  // intent toast: 1.5s speech-bubble next to the cursor.
+  // surfaces --why intent, paw say strings, and the eval read/write icon.
+  // lifetime is page-side via setTimeout so CDP can disconnect right after
+  // enqueuing and the bubble still fades naturally.
+  function toast(text) {
+    if (!document.body) return;
+    const t = document.createElement('div');
+    const p = window.__paw_pos || { x: 0, y: 0 };
+    const sz = lastSize || 32;
+    let left = p.x + sz + 4;
+    let top = Math.max(2, p.y - 4);
+    // Off-screen fallback: flip to the left of the cursor if no room right.
+    if (left + 240 > (window.innerWidth || 1024)) left = Math.max(2, p.x - 244);
+    t.className = '__paw_toast__';
+    t.style.cssText =
+      'position:fixed;left:' + left + 'px;top:' + top + 'px;' +
+      'background:rgba(15,23,42,0.92);color:#fff;padding:6px 10px;border-radius:8px;' +
+      'font:13px/1.4 system-ui,-apple-system,sans-serif;pointer-events:none;' +
+      'z-index:2147483647;max-width:280px;' +
+      'opacity:1;transition:opacity 500ms ease-out;' +
+      'box-shadow:0 2px 8px rgba(0,0,0,0.35);' +
+      'white-space:pre-wrap;word-break:break-word;';
+    t.textContent = String(text);
+    document.body.appendChild(t);
+    setTimeout(function () { t.style.opacity = '0'; }, 1200);
+    setTimeout(function () { try { t.remove(); } catch (e) {} }, 1800);
+  }
   function pressScale(token, scale, durMs) {
     const r = ensure('', 0);
     const p = window.__paw_pos || { x: 0, y: 0 };
@@ -528,7 +555,7 @@ const PAGE_SCRIPT = `
     }
     r.el.addEventListener('animationend', done);
   }
-  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale };
+  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast };
 })();
 `;
 

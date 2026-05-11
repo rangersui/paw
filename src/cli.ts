@@ -101,6 +101,20 @@ function parseSilent(flags: Record<string, string | boolean>): boolean {
   return false;
 }
 
+function parseWhy(flags: Record<string, string | boolean>): string {
+  // --why "..." flags the AI's intent for both audit log + cursor toast.
+  // Falls back to PAW_WHY env so an agent loop can set context once and
+  // not have to thread the string through every shell command.
+  const w = flags.why;
+  if (typeof w === "string" && w.length) return w;
+  if (process.env.PAW_WHY) return process.env.PAW_WHY;
+  return "";
+}
+
+function withWhy(line: string, why: string): string {
+  return why ? `${line} — ${why}` : line;
+}
+
 function parsePace(flags: Record<string, string | boolean>): SpeedPreset | undefined {
   const v = flags.speed;
   if (v === true) return undefined;
@@ -228,6 +242,9 @@ speed  = fast (~280ms) | normal (~1.4s, default) | slow (~3.5s, demo)
          PAW_SPEED=fast for global default, --speed S to override per call
 silent = --silent or --renderer none → real CDP fires, no cursor/highlight
          --renderer cursor (default). pet|highlight|platform reserved for v1.2+
+why    = --why "..." on any action verb → 1.5s speech-bubble next to cursor +
+         audit log appended with the intent. PAW_WHY=... env for once-per-shell.
+         the LLM's reasoning string belongs here, not in a comment.
 output = plain text. no JSON envelopes anywhere.
 state  = ~/.paw (KEY=VALUE, shell-sourceable)
 audit  = ~/.pawprint (every action, ISO ts + line, append-only, mode 0600)
@@ -305,13 +322,17 @@ async function main(): Promise<number> {
 
     case "dismiss-cookies": {
       const action: "accept" | "reject" | "list" = flags.list ? "list" : flags.reject ? "reject" : "accept";
-      const r = await withSession((paw) => paw.dismissCookies(action));
+      const why = parseWhy(flags);
+      const r = await withSession(async (paw) => {
+        if (why && action !== "list") await paw.toast(why);
+        return paw.dismissCookies(action);
+      });
       if (action === "list") {
         if (r.candidates.length === 0) console.log("no CMP detected");
         else r.candidates.forEach((c) => console.log(c));
       } else if (r.matched) {
         console.log(`${r.matched}: ${r.clicked ? action + "ed" : "not clicked"}`);
-        await audit(`dismiss-cookies ${r.matched} ${action}ed`);
+        await audit(withWhy(`dismiss-cookies ${r.matched} ${action}ed`, why));
       } else {
         console.log("no CMP detected");
         return 2 as any;
@@ -524,11 +545,13 @@ async function main(): Promise<number> {
       const t = parseTarget(pos[0]);
       const button = flags.right ? "right" : flags.middle ? "middle" : "left";
       const pace = parsePace(flags);
+      const why = parseWhy(flags);
       await withSession(async (paw) => {
         const desc = await describeTarget((n) => paw.entry(n), t);
+        if (why) await paw.toast(why);
         await paw.click(t, button as any);
         const p = paw.position();
-        await audit(`click ${desc} at (${Math.round(p.x)},${Math.round(p.y)})${button === "left" ? "" : " " + button}`);
+        await audit(withWhy(`click ${desc} at (${Math.round(p.x)},${Math.round(p.y)})${button === "left" ? "" : " " + button}`, why));
       }, { pace, silent: parseSilent(flags) });
       return 0;
     }
@@ -536,11 +559,13 @@ async function main(): Promise<number> {
     case "dblclick": {
       const t = parseTarget(pos[0]);
       const pace = parsePace(flags);
+      const why = parseWhy(flags);
       await withSession(async (paw) => {
         const desc = await describeTarget((n) => paw.entry(n), t);
+        if (why) await paw.toast(why);
         await paw.dblclick(t);
         const p = paw.position();
-        await audit(`dblclick ${desc} at (${Math.round(p.x)},${Math.round(p.y)})`);
+        await audit(withWhy(`dblclick ${desc} at (${Math.round(p.x)},${Math.round(p.y)})`, why));
       }, { pace, silent: parseSilent(flags) });
       return 0;
     }
@@ -548,11 +573,13 @@ async function main(): Promise<number> {
     case "rightclick": {
       const t = parseTarget(pos[0]);
       const pace = parsePace(flags);
+      const why = parseWhy(flags);
       await withSession(async (paw) => {
         const desc = await describeTarget((n) => paw.entry(n), t);
+        if (why) await paw.toast(why);
         await paw.rightclick(t);
         const p = paw.position();
-        await audit(`rightclick ${desc} at (${Math.round(p.x)},${Math.round(p.y)})`);
+        await audit(withWhy(`rightclick ${desc} at (${Math.round(p.x)},${Math.round(p.y)})`, why));
       }, { pace, silent: parseSilent(flags) });
       return 0;
     }
@@ -560,11 +587,13 @@ async function main(): Promise<number> {
     case "hover": {
       const t = parseTarget(pos[0]);
       const pace = parsePace(flags);
+      const why = parseWhy(flags);
       await withSession(async (paw) => {
         const desc = await describeTarget((n) => paw.entry(n), t);
+        if (why) await paw.toast(why);
         await paw.hover(t);
         const p = paw.position();
-        await audit(`hover ${desc} at (${Math.round(p.x)},${Math.round(p.y)})`);
+        await audit(withWhy(`hover ${desc} at (${Math.round(p.x)},${Math.round(p.y)})`, why));
       }, { pace, silent: parseSilent(flags) });
       return 0;
     }
@@ -574,11 +603,13 @@ async function main(): Promise<number> {
       if (pos.length < 2) throw new Error("paw type: missing text (use `@file.txt` or `-` for stdin)");
       const text = (pos[1] === "-" || pos[1].startsWith("@")) ? readSource(pos[1]) : pos.slice(1).join(" ");
       const pace = parsePace(flags);
+      const why = parseWhy(flags);
       await withSession(async (paw) => {
         const desc = await describeTarget((n) => paw.entry(n), t);
+        if (why) await paw.toast(why);
         await paw.type(t, text);
         const preview = text.length > 40 ? text.slice(0, 37) + "..." : text;
-        await audit(`type ${desc} "${preview.replace(/"/g, '\\"')}" (${text.length} chars)`);
+        await audit(withWhy(`type ${desc} "${preview.replace(/"/g, '\\"')}" (${text.length} chars)`, why));
       }, { pace, silent: parseSilent(flags) });
       return 0;
     }
@@ -586,19 +617,25 @@ async function main(): Promise<number> {
     case "keypress": {
       const key = pos[0];
       if (!key) throw new Error("paw keypress: missing key");
-      await withSession((paw) => paw.keypress(key));
-      await audit(`keypress ${key}`);
+      const why = parseWhy(flags);
+      await withSession(async (paw) => {
+        if (why) await paw.toast(why);
+        await paw.keypress(key);
+      });
+      await audit(withWhy(`keypress ${key}`, why));
       return 0;
     }
 
     case "drag": {
       const a = parseTarget(pos[0]);
       const b = parseTarget(pos[1]);
+      const why = parseWhy(flags);
       await withSession(async (paw) => {
         const da = await describeTarget((n) => paw.entry(n), a);
         const db = await describeTarget((n) => paw.entry(n), b);
+        if (why) await paw.toast(why);
         await paw.drag(a, b);
-        await audit(`drag ${da} → ${db}`);
+        await audit(withWhy(`drag ${da} → ${db}`, why));
       });
       return 0;
     }
@@ -606,31 +643,43 @@ async function main(): Promise<number> {
     case "scroll": {
       const dir = (pos[0] || "down") as "up" | "down" | "left" | "right";
       const px = pos[1] ? parseInt(pos[1], 10) : 400;
-      await withSession((paw) => paw.scroll(dir, px));
-      await audit(`scroll ${dir} ${px}px`);
+      const why = parseWhy(flags);
+      await withSession(async (paw) => {
+        if (why) await paw.toast(why);
+        await paw.scroll(dir, px);
+      });
+      await audit(withWhy(`scroll ${dir} ${px}px`, why));
       return 0;
     }
 
     case "goto": {
       const url = pos[0];
       if (!url) throw new Error("paw goto: missing url");
-      await withSession((paw) => paw.goto(url));
-      await audit(`goto ${url}`);
+      const why = parseWhy(flags);
+      await withSession(async (paw) => {
+        if (why) await paw.toast(why);
+        await paw.goto(url);
+      });
+      await audit(withWhy(`goto ${url}`, why));
       return 0;
     }
 
     case "eval": {
       if (!pos.length) throw new Error("paw eval: missing expression (use `@file.js` or `-` for stdin)");
       const expr = (pos[0] === "-" || pos[0].startsWith("@")) ? readSource(pos[0]) : pos.join(" ");
+      const why = parseWhy(flags);
       // eval is the god-mode escape hatch. Even during human takeover the
       // human needs to be able to inspect/reset state via eval — otherwise
       // a stuck __paw_human_grabbing flag self-deadlocks.
-      const v = await withSession((paw) => paw.eval(expr), { readOnly: true });
+      const v = await withSession(async (paw) => {
+        if (why) await paw.toast(why);
+        return paw.eval(expr);
+      }, { readOnly: true });
       if (v === undefined || v === null) console.log(String(v));
       else if (typeof v === "object") console.log(require("util").inspect(v, { depth: 4, colors: false, breakLength: 100 }));
       else console.log(String(v));
       const preview = expr.replace(/\s+/g, " ").trim();
-      await audit(`eval ${preview.length > 120 ? preview.slice(0, 117) + "..." : preview} (${expr.length} chars)`);
+      await audit(withWhy(`eval ${preview.length > 120 ? preview.slice(0, 117) + "..." : preview} (${expr.length} chars)`, why));
       return 0;
     }
 
@@ -678,9 +727,11 @@ async function main(): Promise<number> {
       const y = parseInt(pos[1], 10);
       if (Number.isNaN(x) || Number.isNaN(y)) throw new Error("paw move: requires <x> <y> integers");
       const pace = parsePace(flags);
+      const why = parseWhy(flags);
       await withSession(async (paw) => {
+        if (why) await paw.toast(why);
         await paw.moveTo(x, y);
-        await audit(`move (${x},${y})`);
+        await audit(withWhy(`move (${x},${y})`, why));
       }, { pace, silent: parseSilent(flags) });
       return 0;
     }
@@ -690,30 +741,36 @@ async function main(): Promise<number> {
       const dy = parseInt(pos[1], 10);
       if (Number.isNaN(dx) || Number.isNaN(dy)) throw new Error("paw moveby: requires <dx> <dy> integers");
       const pace = parsePace(flags);
+      const why = parseWhy(flags);
       await withSession(async (paw) => {
+        if (why) await paw.toast(why);
         const result = await paw.moveBy(dx, dy);
         console.log(`x=${Math.round(result.x)} y=${Math.round(result.y)}`);
-        await audit(`moveby (${dx},${dy}) → (${Math.round(result.x)},${Math.round(result.y)})`);
+        await audit(withWhy(`moveby (${dx},${dy}) → (${Math.round(result.x)},${Math.round(result.y)})`, why));
       }, { pace, silent: parseSilent(flags) });
       return 0;
     }
 
     case "press": {
       const button = flags.right ? "right" : flags.middle ? "middle" : "left";
+      const why = parseWhy(flags);
       await withSession(async (paw) => {
+        if (why) await paw.toast(why);
         await paw.press(button as any);
         const p = paw.position();
-        await audit(`press ${button} at (${Math.round(p.x)},${Math.round(p.y)})`);
+        await audit(withWhy(`press ${button} at (${Math.round(p.x)},${Math.round(p.y)})`, why));
       });
       return 0;
     }
 
     case "release": {
       const button = flags.right ? "right" : flags.middle ? "middle" : "left";
+      const why = parseWhy(flags);
       await withSession(async (paw) => {
+        if (why) await paw.toast(why);
         await paw.release(button as any);
         const p = paw.position();
-        await audit(`release ${button} at (${Math.round(p.x)},${Math.round(p.y)})`);
+        await audit(withWhy(`release ${button} at (${Math.round(p.x)},${Math.round(p.y)})`, why));
       });
       return 0;
     }
