@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__pawArrived";
-const SCRIPT_VERSION = 9;
+const SCRIPT_VERSION = 10;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -562,17 +562,25 @@ function makePageScript(cursor: string, size: number): string {
     const tNorm = norm(target);
     if (!tNorm) return null;
     const all = document.querySelectorAll('body *');
+    // Prefer the most-specific (innermost / least-noisy) match. Document
+    // order returns the OUTERMOST container first — setting its textContent
+    // nukes all its children. Track the shortest-text match (closest to
+    // the literal query) AND prefer exact match if any exists.
+    let exact = null;
+    let best = null;
+    let bestLen = Infinity;
     for (let i = 0; i < all.length; i++) {
       const e = all[i];
       if (e.children.length > 8) continue;
       const txt = norm(e.textContent);
       if (txt.length === 0 || txt.length > 500) continue;
-      if (txt.indexOf(tNorm) >= 0) {
-        const r = e.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0) return e;
-      }
+      if (txt.indexOf(tNorm) < 0) continue;
+      const r = e.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) continue;
+      if (txt === tNorm) { exact = e; break; }
+      if (txt.length < bestLen) { best = e; bestLen = txt.length; }
     }
-    return null;
+    return exact || best;
   }
   function liveSel(sel) {
     try {
@@ -598,24 +606,40 @@ function makePageScript(cursor: string, size: number): string {
     const norm = function (s) { return String(s || '').replace(/\s+/g, ' ').trim(); };
     const tNorm = norm(target);
     if (!tNorm) return [];
-    const out = [];
+    const candidates = [];
     const all = document.querySelectorAll('body *');
-    for (let i = 0; i < all.length && out.length < limit; i++) {
+    for (let i = 0; i < all.length; i++) {
       const e = all[i];
       if (e.children.length > 8) continue;
       const txt = norm(e.textContent);
       if (txt.length === 0 || txt.length > 500) continue;
-      if (txt.indexOf(tNorm) >= 0) {
-        const r = e.getBoundingClientRect();
-        if (r.width < 1 || r.height < 1) continue;
-        out.push({
-          tag: e.tagName.toLowerCase(),
-          text: txt.length > 80 ? txt.slice(0, 77) + '...' : txt,
-          x: Math.round(r.left + r.width / 2),
-          y: Math.round(r.top + r.height / 2),
-          offscreen: r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth,
-        });
-      }
+      if (txt.indexOf(tNorm) < 0) continue;
+      const r = e.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) continue;
+      candidates.push({
+        el: e,
+        txt: txt,
+        rect: r,
+      });
+    }
+    // Sort by specificity: exact-match first, then shortest text length.
+    // Same order paw set's resolveEl prefers — list mirrors mutation target.
+    candidates.sort(function (a, b) {
+      const ae = a.txt === tNorm ? 0 : 1;
+      const be = b.txt === tNorm ? 0 : 1;
+      if (ae !== be) return ae - be;
+      return a.txt.length - b.txt.length;
+    });
+    const out = [];
+    for (let i = 0; i < candidates.length && out.length < limit; i++) {
+      const c = candidates[i];
+      out.push({
+        tag: c.el.tagName.toLowerCase(),
+        text: c.txt.length > 80 ? c.txt.slice(0, 77) + '...' : c.txt,
+        x: Math.round(c.rect.left + c.rect.width / 2),
+        y: Math.round(c.rect.top + c.rect.height / 2),
+        offscreen: c.rect.bottom < 0 || c.rect.top > window.innerHeight || c.rect.right < 0 || c.rect.left > window.innerWidth,
+      });
     }
     return out;
   }
