@@ -194,7 +194,6 @@ curl -N http://localhost:3105/listen/home/pawprint/*
 | `PAW_NO_AUDIT=1` | disable both local and remote audit |
 | `PAW_GRAB_KEY` | modifier for human takeover: `alt` (default) / `ctrl` / `shift` / `meta` / `cmd` |
 | `PAW_SPEED` | global cadence: `fast` / `normal` (default) / `slow` |
-| `PAW_FORMAT=json` | switch structured-output verbs to JSON for AI parsers |
 
 ## Known issues
 
