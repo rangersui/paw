@@ -234,7 +234,10 @@ audit  = ~/.pawprint (every action, ISO ts + line, append-only, mode 0600)
          PAW_ELASTIK=http://host:port  also PUT each action to /home/pawprint/<iso>
          PAW_ELASTIK_TOKEN=... (or ELASTIK_WRITE_TOKEN=...) for write auth
          PAW_NO_AUDIT=1                disable both local and remote audit
-         consumer side: \`curl PAW_ELASTIK/listen/home/pawprint/*\` for SSE stream`;
+         consumer side: \`curl PAW_ELASTIK/listen/home/pawprint/*\` for SSE stream
+grab   = Alt+drag the cursor to take over from AI mid-task.
+         PAW_GRAB_KEY=alt|ctrl|shift|meta|cmd (default alt; remap if a site or
+         browser already binds Alt — Brave / Figma / Calendar / VS Code Web).`;
 
 interface Flags {
   pos: string[];

@@ -192,6 +192,30 @@ curl -N http://localhost:3105/listen/home/pawprint/*
 | `PAW_ELASTIK` | base URL of the HTTP server receiving the audit tee |
 | `PAW_ELASTIK_TOKEN` or `ELASTIK_WRITE_TOKEN` | write auth header |
 | `PAW_NO_AUDIT=1` | disable both local and remote audit |
+| `PAW_GRAB_KEY` | modifier for human takeover: `alt` (default) / `ctrl` / `shift` / `meta` / `cmd` |
+| `PAW_SPEED` | global cadence: `fast` / `normal` (default) / `slow` |
+| `PAW_FORMAT=json` | switch structured-output verbs to JSON for AI parsers |
+
+## Known issues
+
+**Alt+drag conflicts.** The default takeover modifier (Alt) collides with several common surfaces:
+
+- **Brave** binds Alt+click to "save link as".
+- **Figma / Google Calendar / VS Code Web** bind Alt+click and Alt+drag to app-specific actions.
+- **macOS** uses Option (Alt) for character composition; pressing it during text selection enters a different selection mode.
+
+If Alt is reserved by the page you're on, remap it:
+
+```bash
+PAW_GRAB_KEY=ctrl paw start brave --url https://figma.com/...
+# now Ctrl+drag the cursor instead of Alt+drag
+```
+
+Accepted values: `alt` (default), `ctrl`, `shift`, `meta` (aka `cmd` / `win`). Takes effect when the next `paw` command (re)installs the page script; navigating to a new page resets to the default until the next paw command runs. Re-export `PAW_GRAB_KEY` in your shell rc to make it sticky.
+
+**Highlight outline.** The 3px green target outline on every click intrudes into the page during long type-sequences. Workaround: `--silent` suppresses the entire animation envelope. A `--quiet-highlight` middle ground is on the roadmap.
+
+**`paw start` doesn't reuse existing sessions.** If a Chromium debug instance is already running on the port, `paw start` still spawns a new one. Use `paw connect <port>` if you've already opened the browser manually. Auto-detect-and-reuse is on the roadmap.
 
 ## State file
 

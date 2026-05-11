@@ -97,6 +97,20 @@ export async function connect(opts: ConnectOptions = {}): Promise<Paw> {
     speed: opts.speed ?? 1500,
   });
   await renderer.install();
+  // Honor PAW_GRAB_KEY env (alt|ctrl|shift|meta|cmd) — remaps the modifier
+  // for human-takeover-via-mouse. Set every install because new-document
+  // injections reset window state on navigation; the page script still
+  // falls back to altKey if __paw_grab_mod is unset.
+  const grab = (process.env.PAW_GRAB_KEY || "").toLowerCase();
+  const grabMap: Record<string, string> = {
+    alt: "altKey", ctrl: "ctrlKey", shift: "shiftKey",
+    meta: "metaKey", cmd: "metaKey", win: "metaKey",
+  };
+  if (grab && grabMap[grab]) {
+    await client.send("Runtime.evaluate", {
+      expression: `window.__paw_grab_mod = ${JSON.stringify(grabMap[grab])}`,
+    });
+  }
   const pace = resolvePace(opts);
   return new Paw(client, renderer, pace.t);
 }

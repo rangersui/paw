@@ -159,21 +159,27 @@ const PAGE_SCRIPT = `
 
   // ─── human-grab affordance: Alt+drag the cursor with the real mouse ───
   // The cursor stays pointer-events:none so it doesn't block page clicks.
-  // We listen globally for Alt+mousedown; if the mouse coords are inside
-  // the cursor's bbox, we capture into a manual-drag loop until mouseup.
-  // Shimeji-style direct manipulation, but gated on Alt so normal browsing
-  // (including text selection with Shift) is undisturbed.
+  // We listen globally for <modifier>+mousedown; if the mouse coords are
+  // inside the cursor's bbox, we capture into a manual-drag loop until
+  // mouseup. Shimeji-style direct manipulation, but gated on a modifier
+  // so normal browsing (including text selection) is undisturbed.
+  //
+  // Modifier defaults to Alt but can be remapped via PAW_GRAB_KEY env
+  // (alt|ctrl|shift|meta) — useful when Alt is reserved by the page
+  // (Figma, Calendar, VS Code Web) or the browser (Brave: Alt+click =
+  // download link). Wrapper sets window.__paw_grab_mod after install.
   let grabbing = false;
+  function modKey() { return window.__paw_grab_mod || 'altKey'; }
   function setHighlightOn(on) {
     const el = document.getElementById(ID);
     if (!el) return;
     el.style.outline = on ? '2px solid #3b82f6' : '';
     el.style.outlineOffset = on ? '2px' : '';
   }
-  window.addEventListener('keydown', function (e) { if (e.altKey && !grabbing) setHighlightOn(true); });
-  window.addEventListener('keyup', function (e) { if (!e.altKey && !grabbing) setHighlightOn(false); });
+  window.addEventListener('keydown', function (e) { if (e[modKey()] && !grabbing) setHighlightOn(true); });
+  window.addEventListener('keyup', function (e) { if (!e[modKey()] && !grabbing) setHighlightOn(false); });
   window.addEventListener('mousedown', function (e) {
-    if (!e.altKey) return;
+    if (!e[modKey()]) return;
     const el = document.getElementById(ID);
     if (!el) return;
     const r = el.getBoundingClientRect();
