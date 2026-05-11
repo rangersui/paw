@@ -1,12 +1,17 @@
 import { CDPClient } from "./cdp";
 import { bezierPath, Pt } from "./bezier";
 
-const DEFAULT_CURSOR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path d="M3 2 L3 19 L8 14 L11 22 L14 21 L11 13 L18 13 Z" fill="black" stroke="white" stroke-width="1"/></svg>`;
+// Arrow tip anchored at (0, 0) of the viewBox so translate(x, y) places the
+// pointer tip exactly at viewport (x, y) — matches where Input.dispatchMouseEvent
+// fires. Previous path had M3,2 which gave a ~4px diagonal offset between the
+// visible arrow tip and the real click point, most visible during drag where the
+// dragged element follows the real coords but the eye follows the arrow tip.
+const DEFAULT_CURSOR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path d="M0 0 L0 17 L5 12 L8 20 L11 19 L8 11 L15 11 Z" fill="black" stroke="white" stroke-width="1"/></svg>`;
 export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__petArrived";
-const SCRIPT_VERSION = 10;
+const SCRIPT_VERSION = 11;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -53,6 +58,8 @@ const PAGE_SCRIPT = `
       const sc = window.__pet_resting ? 0.5 : 1;
       el.style.cssText = 'position:fixed;left:0;top:0;width:' + (size || lastSize) + 'px;height:' + (size || lastSize) + 'px;pointer-events:none;z-index:2147483647;transform:translate(' + p.x + 'px,' + p.y + 'px) scale(' + sc + ');will-change:transform;filter:drop-shadow(0 1px 2px rgba(0,0,0,.3));';
       (document.body || document.documentElement).appendChild(el);
+    } else if (src && el.src !== src) {
+      el.src = src;
     }
     let style = document.getElementById(STYLE_ID);
     if (!style) {
@@ -463,15 +470,21 @@ export class CursorRenderer implements Renderer {
   async moveTo(target: Pt, opts?: { dispatchMouseEvents?: boolean; buttons?: number; duration?: number }): Promise<void> {
     const dist = Math.hypot(target.x - this.current.x, target.y - this.current.y);
     if (dist < 1) return;
-    const path = bezierPath(this.current, target, 24);
     const duration = opts?.duration ?? Math.max(120, Math.min(900, (dist / this.opts.speed) * 1000));
-    const token = `t${++this.tokenCounter}`;
-    const arrived = this.waitForToken(token);
-    const expr = `window.__pet && window.__pet.animate(${JSON.stringify(token)},${JSON.stringify(this.opts.cursor)},${this.opts.size},${JSON.stringify(path)},${duration})`;
-    await this.client.send("Runtime.evaluate", { expression: expr });
+
+    // Drag mode: cursor MUST stay in lockstep with the dispatched mouseMoved
+    // events. CSS keyframe animation runs on the compositor at its own pace
+    // and finishes ~100ms before the dispatch loop, so the dragged element
+    // (which follows real mouse coords) visibly lags behind the cursor.
+    // Drive both from the same loop: each iteration sets cursor inline
+    // transform AND dispatches mouseMoved to the same path point.
     if (opts?.dispatchMouseEvents) {
-      const stepDelay = duration / path.length;
+      const path = bezierPath(this.current, target, 16);
+      const stepDelay = Math.max(15, (duration - path.length * 8) / path.length);
       for (const p of path) {
+        await this.client.send("Runtime.evaluate", {
+          expression: `(() => { const el = document.getElementById('__pet_cursor__'); if (el) { el.style.animation = 'none'; el.style.transform = 'translate(${p.x}px,${p.y}px) scale(1)'; } window.__pet_pos = { x: ${p.x}, y: ${p.y} }; })()`,
+        });
         await this.client.send("Input.dispatchMouseEvent", {
           type: "mouseMoved",
           x: p.x,
@@ -481,7 +494,16 @@ export class CursorRenderer implements Renderer {
         });
         await sleep(stepDelay);
       }
+      this.current = target;
+      return;
     }
+
+    // Cursor-only move: smooth CSS keyframe animation
+    const path = bezierPath(this.current, target, 24);
+    const token = `t${++this.tokenCounter}`;
+    const arrived = this.waitForToken(token);
+    const expr = `window.__pet && window.__pet.animate(${JSON.stringify(token)},${JSON.stringify(this.opts.cursor)},${this.opts.size},${JSON.stringify(path)},${duration})`;
+    await this.client.send("Runtime.evaluate", { expression: expr });
     await arrived;
     this.current = target;
   }
