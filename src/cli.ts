@@ -676,8 +676,12 @@ async function main(): Promise<number> {
       const url = pos[0];
       if (!url) throw new Error("paw goto: missing url");
       const why = parseWhy(flags);
+      // Navigation is the page-blanking action where the human most needs
+      // a prelude — otherwise the page just disappears and the human can't
+      // tell whether AI clicked a link or AI explicitly navigated.
+      const urlShort = url.length > 50 ? url.slice(0, 47) + "..." : url;
       await withSession(async (paw) => {
-        if (why) await paw.toast(why);
+        await paw.toast(why || `🌐 ${urlShort}`);
         await paw.goto(url);
       });
       await audit(withWhy(`goto ${url}`, why));
