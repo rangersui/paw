@@ -1,4 +1,4 @@
-export { connect, PetCursor } from "./wrapper";
+export { connect, Paw } from "./wrapper";
 export type { ConnectOptions, Box, MouseButton, SnapshotEntry, Target } from "./wrapper";
 export type { Pt } from "./bezier";
 export { CDPClient } from "./cdp";

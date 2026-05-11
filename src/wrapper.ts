@@ -28,7 +28,7 @@ export const PACE: Record<SpeedPreset, PaceTimings> = {
 };
 
 export function resolvePace(opts: ConnectOptions): { preset: SpeedPreset; t: PaceTimings } {
-  const fromEnv = process.env.PET_SPEED as SpeedPreset | undefined;
+  const fromEnv = process.env.PAW_SPEED as SpeedPreset | undefined;
   const preset: SpeedPreset = opts.pace || fromEnv || "normal";
   if (!PACE[preset]) return { preset: "normal", t: PACE.normal };
   return { preset, t: PACE[preset] };
@@ -78,7 +78,7 @@ export interface LogEntry {
 export type MouseButton = "left" | "middle" | "right";
 export type Target = string | number;
 
-export async function connect(opts: ConnectOptions = {}): Promise<PetCursor> {
+export async function connect(opts: ConnectOptions = {}): Promise<Paw> {
   let client: CDPClient;
   if (opts.wsUrl) client = await CDPClient.attach(opts.wsUrl);
   else client = await CDPClient.discover(opts);
@@ -98,10 +98,10 @@ export async function connect(opts: ConnectOptions = {}): Promise<PetCursor> {
   });
   await renderer.install();
   const pace = resolvePace(opts);
-  return new PetCursor(client, renderer, pace.t);
+  return new Paw(client, renderer, pace.t);
 }
 
-export class PetCursor {
+export class Paw {
   /** Suppresses cursor animation + highlight ceremony. Real CDP events still fire. */
   public silent = false;
   constructor(public readonly client: CDPClient, private readonly animator: Renderer, private readonly pace: PaceTimings = PACE.normal) {}
@@ -112,15 +112,15 @@ export class PetCursor {
       returnByValue: true,
     });
     const v = res.result?.value;
-    if (!v) throw new Error(`pet-cursor: element not found: ${selector}`);
+    if (!v) throw new Error(`paw: element not found: ${selector}`);
     return v;
   }
 
   async center(target: Target): Promise<Pt> {
     const expr =
       typeof target === "number"
-        ? `window.__pet && window.__pet.liveCenter(${target})`
-        : `window.__pet && window.__pet.liveSel(${JSON.stringify(target)})`;
+        ? `window.__paw && window.__paw.liveCenter(${target})`
+        : `window.__paw && window.__paw.liveSel(${JSON.stringify(target)})`;
     const res = await this.client.send<{ result: { value: Pt | null } }>("Runtime.evaluate", {
       expression: expr,
       returnByValue: true,
@@ -128,14 +128,14 @@ export class PetCursor {
     const v = res.result?.value;
     if (!v) {
       const what = typeof target === "number" ? `snapshot [${target}]` : target;
-      throw new Error(`pet-cursor: ${what} not found or stale. ${typeof target === "number" ? "Run `pet snapshot` again." : ""}`);
+      throw new Error(`paw: ${what} not found or stale. ${typeof target === "number" ? "Run `paw snapshot` again." : ""}`);
     }
     return v;
   }
 
   async snapshot(): Promise<SnapshotEntry[]> {
     const res = await this.client.send<{ result: { value: (SnapshotEntry | null)[] } }>("Runtime.evaluate", {
-      expression: "window.__pet.snapshot()",
+      expression: "window.__paw.snapshot()",
       returnByValue: true,
     });
     const arr = res.result?.value ?? [];
@@ -144,7 +144,7 @@ export class PetCursor {
 
   async nearby(radius = 200, limit = 12): Promise<NearbyEntry[]> {
     const res = await this.client.send<{ result: { value: NearbyEntry[] } }>("Runtime.evaluate", {
-      expression: `window.__pet.nearby(${radius}, ${limit})`,
+      expression: `window.__paw.nearby(${radius}, ${limit})`,
       returnByValue: true,
     });
     return res.result?.value ?? [];
@@ -153,7 +153,7 @@ export class PetCursor {
   /** Snapshot filtered to only viewport-visible elements — what the human can actually see right now. */
   async visible(): Promise<(SnapshotEntry & { idx: number })[]> {
     const res = await this.client.send<{ result: { value: any[] } }>("Runtime.evaluate", {
-      expression: "window.__pet.visible()",
+      expression: "window.__paw.visible()",
       returnByValue: true,
     });
     return res.result?.value ?? [];
@@ -162,7 +162,7 @@ export class PetCursor {
   /** Scroll a text-substring or CSS selector into viewport center. Bridges the AI/human visual gap. */
   async show(target: string): Promise<{ tag: string; text: string; rect: { x: number; y: number; w: number; h: number } } | null> {
     const res = await this.client.send<{ result: { value: any } }>("Runtime.evaluate", {
-      expression: `window.__pet.show(${JSON.stringify(target)})`,
+      expression: `window.__paw.show(${JSON.stringify(target)})`,
       returnByValue: true,
     });
     return res.result?.value ?? null;
@@ -170,10 +170,10 @@ export class PetCursor {
 
   async entry(n: number): Promise<SnapshotEntry> {
     const res = await this.client.send<{ result: { value: SnapshotEntry | null } }>("Runtime.evaluate", {
-      expression: `(window.__pet_snapshot && window.__pet_snapshot[${n}]) || null`,
+      expression: `(window.__paw_snapshot && window.__paw_snapshot[${n}]) || null`,
       returnByValue: true,
     });
-    if (!res.result?.value) throw new Error(`pet-cursor: no snapshot entry [${n}]. Run \`pet snapshot\` first.`);
+    if (!res.result?.value) throw new Error(`paw: no snapshot entry [${n}]. Run \`paw snapshot\` first.`);
     return res.result.value;
   }
 
@@ -187,10 +187,10 @@ export class PetCursor {
       this.animator.setPosition({ x, y });
       return;
     }
-    // Page-side press state survives across pet invocations. If a previous
-    // `pet press` is still active, every subsequent move must dispatch
+    // Page-side press state survives across paw invocations. If a previous
+    // `paw press` is still active, every subsequent move must dispatch
     // mouseMoved events in lockstep so the dragged element follows along.
-    const pressed = await this.eval<{ button: string; buttons: number } | null>("window.__pet_pressed || null");
+    const pressed = await this.eval<{ button: string; buttons: number } | null>("window.__paw_pressed || null");
     if (pressed) {
       await this.animator.moveTo({ x, y }, { duration: this.pace.move, dispatchMouseEvents: true, buttons: pressed.buttons });
     } else {
@@ -213,14 +213,14 @@ export class PetCursor {
     await this.dispatch("mousePressed", p.x, p.y, button, 1);
     const buttons = button === "left" ? 1 : button === "right" ? 2 : 4;
     await this.client.send("Runtime.evaluate", {
-      expression: `window.__pet_pressed = { button: ${JSON.stringify(button)}, buttons: ${buttons} }`,
+      expression: `window.__paw_pressed = { button: ${JSON.stringify(button)}, buttons: ${buttons} }`,
     });
   }
 
   async release(button: MouseButton = "left"): Promise<void> {
     const p = this.animator.position();
     await this.dispatch("mouseReleased", p.x, p.y, button, 1);
-    await this.client.send("Runtime.evaluate", { expression: "window.__pet_pressed = null" });
+    await this.client.send("Runtime.evaluate", { expression: "window.__paw_pressed = null" });
   }
 
   async click(target: Target, button: MouseButton = "left"): Promise<void> {
@@ -354,14 +354,14 @@ export class PetCursor {
     while (Date.now() - start < timeoutMs) {
       let found: boolean;
       if (typeof target === "number") {
-        found = await this.eval<boolean>(`!!(window.__pet_snapshot && window.__pet_snapshot[${target}])`);
+        found = await this.eval<boolean>(`!!(window.__paw_snapshot && window.__paw_snapshot[${target}])`);
       } else {
         found = await this.eval<boolean>(`!!document.querySelector(${JSON.stringify(target)})`);
       }
       if (found) return;
       await new Promise((r) => setTimeout(r, 50));
     }
-    throw new Error(`pet-cursor: timeout waiting for ${target}`);
+    throw new Error(`paw: timeout waiting for ${target}`);
   }
 
   async text(target: Target): Promise<string | null> {
@@ -376,7 +376,7 @@ export class PetCursor {
 
   async html(target: Target = "html"): Promise<string | null> {
     const sel = typeof target === "number" ? null : target;
-    if (sel === null) throw new Error("pet-cursor: html() does not support snapshot index");
+    if (sel === null) throw new Error("paw: html() does not support snapshot index");
     return this.eval<string | null>(
       `(() => { const el = document.querySelector(${JSON.stringify(sel)}); return el ? el.outerHTML : null; })()`,
     );
@@ -384,7 +384,7 @@ export class PetCursor {
 
   /** True while the human is Alt+dragging the cursor in the browser. */
   async humanGrabbing(): Promise<boolean> {
-    return await this.eval<boolean>("!!window.__pet_human_grabbing");
+    return await this.eval<boolean>("!!window.__paw_human_grabbing");
   }
 
   /**
@@ -403,13 +403,13 @@ export class PetCursor {
   /** Drain and return any HUMAN-TAKEOVER entries that accumulated in the page-side buffer. */
   async drainHumanLog(): Promise<{ ts: string; endTs: string; from: { x: number; y: number }; to: { x: number; y: number } }[]> {
     return await this.eval<any[]>(
-      "(() => { const b = window.__pet_human_log || []; window.__pet_human_log = []; return b; })()",
+      "(() => { const b = window.__paw_human_log || []; window.__paw_human_log = []; return b; })()",
     );
   }
 
   async dismissCookies(action: "accept" | "reject" | "list" = "accept"): Promise<{ matched: string | null; clicked: boolean; candidates: string[] }> {
     const res = await this.client.send<{ result: { value: { matched: string | null; clicked: boolean; candidates: string[] } } }>("Runtime.evaluate", {
-      expression: `window.__pet && window.__pet.dismissCookies(${JSON.stringify(action)})`,
+      expression: `window.__paw && window.__paw.dismissCookies(${JSON.stringify(action)})`,
       returnByValue: true,
     });
     return res.result?.value ?? { matched: null, clicked: false, candidates: [] };
@@ -417,7 +417,7 @@ export class PetCursor {
 
   async getLog(): Promise<LogEntry[]> {
     const res = await this.client.send<{ result: { value: LogEntry[] } }>("Runtime.evaluate", {
-      expression: "window.__pet_log || []",
+      expression: "window.__paw_log || []",
       returnByValue: true,
     });
     return res.result?.value ?? [];
@@ -425,13 +425,13 @@ export class PetCursor {
 
   async clearLog(): Promise<void> {
     await this.client.send("Runtime.evaluate", {
-      expression: "(window.__pet_log && (window.__pet_log.length = 0))",
+      expression: "(window.__paw_log && (window.__paw_log.length = 0))",
     });
   }
 
   async inflight(): Promise<number> {
     const res = await this.client.send<{ result: { value: number } }>("Runtime.evaluate", {
-      expression: "window.__pet_inflight | 0",
+      expression: "window.__paw_inflight | 0",
       returnByValue: true,
     });
     return res.result?.value ?? 0;
@@ -450,7 +450,7 @@ export class PetCursor {
       }
       await new Promise((r) => setTimeout(r, 100));
     }
-    throw new Error(`pet-cursor: wait-idle timeout (${timeoutMs}ms)`);
+    throw new Error(`paw: wait-idle timeout (${timeoutMs}ms)`);
   }
 
   async close(): Promise<void> {

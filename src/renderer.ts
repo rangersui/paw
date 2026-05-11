@@ -10,26 +10,26 @@ const DEFAULT_CURSOR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" h
 export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
-const BINDING = "__petArrived";
-const SCRIPT_VERSION = 16;
+const BINDING = "__pawArrived";
+const SCRIPT_VERSION = 1;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
 const PAGE_SCRIPT = `
 (() => {
-  if (window.__pet && window.__pet.v === ${SCRIPT_VERSION}) return;
-  const ID = '__pet_cursor__';
-  const STYLE_ID = '__pet_style__';
+  if (window.__paw && window.__paw.v === ${SCRIPT_VERSION}) return;
+  const ID = '__paw_cursor__';
+  const STYLE_ID = '__paw_style__';
   let restTimer = null;
   let lastSrc = '', lastSize = 32;
   function clearRest() { if (restTimer) { clearTimeout(restTimer); restTimer = null; } }
   function scheduleRest() {
     clearRest();
-    if (window.__pet_no_rest) return;
+    if (window.__paw_no_rest) return;
     restTimer = setTimeout(rest, ${IDLE_MS});
   }
-  function stay() { window.__pet_no_rest = true; clearRest(); }
-  function unstay() { window.__pet_no_rest = false; scheduleRest(); }
+  function stay() { window.__paw_no_rest = true; clearRest(); }
+  function unstay() { window.__paw_no_rest = false; scheduleRest(); }
   function corner() {
     return { x: (window.innerWidth || 1024) - ${CORNER_PAD}, y: ${CORNER_PAD} };
   }
@@ -60,8 +60,8 @@ const PAGE_SCRIPT = `
       el = document.createElement('img');
       el.id = ID;
       el.src = src || lastSrc;
-      const p = window.__pet_pos || { x: 0, y: 0 };
-      const sc = window.__pet_resting ? 0.5 : 1;
+      const p = window.__paw_pos || { x: 0, y: 0 };
+      const sc = window.__paw_resting ? 0.5 : 1;
       el.style.cssText = 'position:fixed;left:0;top:0;width:' + (size || lastSize) + 'px;height:' + (size || lastSize) + 'px;pointer-events:none;z-index:2147483647;transform:translate(' + p.x + 'px,' + p.y + 'px) scale(' + sc + ');will-change:transform;filter:drop-shadow(0 1px 2px rgba(0,0,0,.3));';
       (document.body || document.documentElement).appendChild(el);
     } else if (src && el.src !== src) {
@@ -77,14 +77,14 @@ const PAGE_SCRIPT = `
   }
   function animate(token, src, size, path, duration) {
     clearRest();
-    const wasResting = window.__pet_resting === true;
-    window.__pet_resting = false;
+    const wasResting = window.__paw_resting === true;
+    window.__paw_resting = false;
     const r = ensure(src, size);
     // Clamp every waypoint to viewport so the cursor can't leave the screen.
     // If the caller passed an off-screen target, the cursor slides along the
     // edge instead of vanishing into the void.
     const clamped = path.map(function (p) { return clampPos(p.x, p.y); });
-    const name = '__pet_move_' + token;
+    const name = '__paw_move_' + token;
     const frames = clamped.map(function (p, i) {
       const t = i / (clamped.length - 1);
       const pct = (t * 100).toFixed(2);
@@ -100,7 +100,7 @@ const PAGE_SCRIPT = `
       const last = clamped[clamped.length - 1];
       r.el.style.animation = 'none';
       r.el.style.transform = 'translate(' + last.x + 'px,' + last.y + 'px) scale(1)';
-      window.__pet_pos = { x: last.x, y: last.y };
+      window.__paw_pos = { x: last.x, y: last.y };
       if (typeof window['${BINDING}'] === 'function') window['${BINDING}'](token);
       scheduleRest();
     }
@@ -108,17 +108,17 @@ const PAGE_SCRIPT = `
   }
   function rest() {
     restTimer = null;
-    const cur = window.__pet_pos || { x: 0, y: 0 };
+    const cur = window.__paw_pos || { x: 0, y: 0 };
     const c = corner();
     const r = ensure('', 0);
     if (Math.hypot(cur.x - c.x, cur.y - c.y) < 4) {
       r.el.style.transform = 'translate(' + c.x + 'px,' + c.y + 'px) scale(0.5)';
-      window.__pet_pos = c;
-      window.__pet_resting = true;
+      window.__paw_pos = c;
+      window.__paw_resting = true;
       return;
     }
     const path = bp(cur, c);
-    const name = '__pet_rest_' + Date.now();
+    const name = '__paw_rest_' + Date.now();
     const frames = path.map(function (p, i) {
       const t = i / (path.length - 1);
       const pct = (t * 100).toFixed(2);
@@ -133,8 +133,8 @@ const PAGE_SCRIPT = `
       r.el.removeEventListener('animationend', done);
       r.el.style.animation = 'none';
       r.el.style.transform = 'translate(' + c.x + 'px,' + c.y + 'px) scale(0.5)';
-      window.__pet_pos = c;
-      window.__pet_resting = true;
+      window.__paw_pos = c;
+      window.__paw_resting = true;
     }
     r.el.addEventListener('animationend', done);
   }
@@ -142,18 +142,18 @@ const PAGE_SCRIPT = `
     clearRest();
     const r = ensure(src || '', size || 32);
     const ring = document.createElement('div');
-    const p = window.__pet_pos || { x: 0, y: 0 };
+    const p = window.__paw_pos || { x: 0, y: 0 };
     ring.style.cssText = 'position:fixed;left:' + p.x + 'px;top:' + p.y + 'px;width:24px;height:24px;border:2px solid #ff5252;border-radius:50%;pointer-events:none;z-index:2147483646;transform:translate(-12px,-12px) scale(.4);opacity:1;transition:transform 280ms ease-out,opacity 280ms ease-out;';
     document.body.appendChild(ring);
     requestAnimationFrame(function(){ ring.style.transform = 'translate(-12px,-12px) scale(2)'; ring.style.opacity = '0'; });
     setTimeout(function(){ ring.remove(); if (typeof window['${BINDING}'] === 'function') window['${BINDING}'](token); scheduleRest(); }, 300);
   }
   window.addEventListener('resize', function () {
-    if (window.__pet_resting) {
+    if (window.__paw_resting) {
       const c = corner();
       const el = document.getElementById(ID);
       if (el) el.style.transform = 'translate(' + c.x + 'px,' + c.y + 'px) scale(0.5)';
-      window.__pet_pos = c;
+      window.__paw_pos = c;
     }
   }, { passive: true });
 
@@ -182,29 +182,29 @@ const PAGE_SCRIPT = `
     e.preventDefault();
     e.stopPropagation();
     grabbing = true;
-    window.__pet_human_grabbing = true;  // signals AI to wait
+    window.__paw_human_grabbing = true;  // signals AI to wait
     clearRest();
     setHighlightOn(true);
     const startMouse = { x: e.clientX, y: e.clientY };
-    const startCursor = window.__pet_pos || { x: 0, y: 0 };
+    const startCursor = window.__paw_pos || { x: 0, y: 0 };
     const startTs = new Date().toISOString();
     function onMove(ev) {
       const c = clampPos(startCursor.x + ev.clientX - startMouse.x, startCursor.y + ev.clientY - startMouse.y);
       el.style.animation = 'none';
       el.style.transform = 'translate(' + c.x + 'px,' + c.y + 'px) scale(1)';
-      window.__pet_pos = c;
-      window.__pet_resting = false;
+      window.__paw_pos = c;
+      window.__paw_resting = false;
     }
     function onUp() {
       window.removeEventListener('mousemove', onMove, true);
       window.removeEventListener('mouseup', onUp, true);
       grabbing = false;
-      window.__pet_human_grabbing = false;
+      window.__paw_human_grabbing = false;
       setHighlightOn(false);
-      // Buffer the takeover for the next pet command to flush into the audit log
-      const endPos = window.__pet_pos || { x: 0, y: 0 };
-      window.__pet_human_log = window.__pet_human_log || [];
-      window.__pet_human_log.push({
+      // Buffer the takeover for the next paw command to flush into the audit log
+      const endPos = window.__paw_pos || { x: 0, y: 0 };
+      window.__paw_human_log = window.__paw_human_log || [];
+      window.__paw_human_log.push({
         ts: startTs,
         endTs: new Date().toISOString(),
         from: { x: Math.round(startCursor.x), y: Math.round(startCursor.y) },
@@ -218,15 +218,15 @@ const PAGE_SCRIPT = `
 
   // ─── log buffer + network counter (monkey-patch, page-side) ───
   function installLog() {
-    if (window.__pet_log_installed) return;
-    window.__pet_log_installed = true;
-    window.__pet_log = window.__pet_log || [];
-    window.__pet_inflight = 0;
+    if (window.__paw_log_installed) return;
+    window.__paw_log_installed = true;
+    window.__paw_log = window.__paw_log || [];
+    window.__paw_inflight = 0;
     const MAX = 2000;
     function push(rec) {
       rec.t = Date.now();
-      window.__pet_log.push(rec);
-      if (window.__pet_log.length > MAX) window.__pet_log.shift();
+      window.__paw_log.push(rec);
+      if (window.__paw_log.length > MAX) window.__paw_log.shift();
     }
     ['log','info','warn','error','debug'].forEach(function (lvl) {
       const orig = console[lvl];
@@ -248,28 +248,28 @@ const PAGE_SCRIPT = `
         const url = (typeof input === 'string') ? input : (input && input.url) || '';
         const method = (init && init.method) || (typeof input !== 'string' && input && input.method) || 'GET';
         const t0 = Date.now();
-        window.__pet_inflight++;
+        window.__paw_inflight++;
         return oFetch.apply(this, arguments).then(function (res) {
           push({ kind: 'net', method: method, url: url, status: res.status, ms: Date.now() - t0 });
-          window.__pet_inflight--;
+          window.__paw_inflight--;
           return res;
         }, function (err) {
           push({ kind: 'net', method: method, url: url, status: 0, err: String(err), ms: Date.now() - t0 });
-          window.__pet_inflight--;
+          window.__paw_inflight--;
           throw err;
         });
       };
     }
     const XP = XMLHttpRequest.prototype;
     const oOpen = XP.open, oSend = XP.send;
-    XP.open = function (m, u) { this.__pet_m = m; this.__pet_u = u; return oOpen.apply(this, arguments); };
+    XP.open = function (m, u) { this.__paw_m = m; this.__paw_u = u; return oOpen.apply(this, arguments); };
     XP.send = function () {
       const t0 = Date.now();
       const self = this;
-      window.__pet_inflight++;
+      window.__paw_inflight++;
       this.addEventListener('loadend', function () {
-        push({ kind: 'net', method: self.__pet_m || 'GET', url: self.__pet_u || '', status: self.status, ms: Date.now() - t0 });
-        window.__pet_inflight--;
+        push({ kind: 'net', method: self.__paw_m || 'GET', url: self.__paw_u || '', status: self.status, ms: Date.now() - t0 });
+        window.__paw_inflight--;
       });
       return oSend.apply(this, arguments);
     };
@@ -388,14 +388,14 @@ const PAGE_SCRIPT = `
       });
       els.push(el);
     });
-    window.__pet_snapshot = out;
-    window.__pet_snapshot_els = els;
+    window.__paw_snapshot = out;
+    window.__paw_snapshot_els = els;
     scheduleRest();
     return out;
   }
   function visible() {
-    if (!window.__pet_snapshot) snapshot();
-    const snap = window.__pet_snapshot || [];
+    if (!window.__paw_snapshot) snapshot();
+    const snap = window.__paw_snapshot || [];
     const out = [];
     for (let i = 1; i < snap.length; i++) {
       if (snap[i] && !snap[i].offscreen) out.push(Object.assign({ idx: i }, snap[i]));
@@ -435,11 +435,11 @@ const PAGE_SCRIPT = `
   }
   function nearby(radius, limit) {
     scheduleRest();
-    if (!window.__pet_snapshot) snapshot();
-    const cur = window.__pet_pos || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    if (!window.__paw_snapshot) snapshot();
+    const cur = window.__paw_pos || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
     const R = radius || 200;
     const L = limit || 12;
-    const snap = window.__pet_snapshot || [];
+    const snap = window.__paw_snapshot || [];
     const out = [];
     for (let i = 1; i < snap.length; i++) {
       const e = snap[i];
@@ -467,7 +467,7 @@ const PAGE_SCRIPT = `
     return { x: cx, y: cy };
   }
   function liveCenter(n) {
-    const arr = window.__pet_snapshot_els;
+    const arr = window.__paw_snapshot_els;
     return _live(arr && arr[n]);
   }
   function liveSel(sel) {
@@ -475,7 +475,7 @@ const PAGE_SCRIPT = `
   }
   function resolveEl(target) {
     if (typeof target === 'number') {
-      const arr = window.__pet_snapshot_els;
+      const arr = window.__paw_snapshot_els;
       return (arr && arr[target]) || null;
     }
     try { return document.querySelector(target); } catch (e) { return null; }
@@ -485,8 +485,8 @@ const PAGE_SCRIPT = `
     unhighlight();
     const el = resolveEl(target);
     if (!el) return false;
-    window.__pet_hl_el = el;
-    window.__pet_hl_prev = {
+    window.__paw_hl_el = el;
+    window.__paw_hl_prev = {
       outline: el.style.outline,
       outlineOffset: el.style.outlineOffset,
       transition: el.style.transition,
@@ -497,19 +497,19 @@ const PAGE_SCRIPT = `
     return true;
   }
   function unhighlight() {
-    const el = window.__pet_hl_el;
+    const el = window.__paw_hl_el;
     if (!el) return;
-    const p = window.__pet_hl_prev || {};
+    const p = window.__paw_hl_prev || {};
     el.style.outline = p.outline || '';
     el.style.outlineOffset = p.outlineOffset || '';
     el.style.transition = p.transition || '';
-    window.__pet_hl_el = null;
-    window.__pet_hl_prev = null;
+    window.__paw_hl_el = null;
+    window.__paw_hl_prev = null;
   }
   function pressScale(token, scale, durMs) {
     const r = ensure('', 0);
-    const p = window.__pet_pos || { x: 0, y: 0 };
-    const name = '__pet_press_' + token;
+    const p = window.__paw_pos || { x: 0, y: 0 };
+    const name = '__paw_press_' + token;
     r.style.textContent = '@keyframes ' + name + ' { 0% { transform: translate(' + p.x + 'px,' + p.y + 'px) scale(1) } 100% { transform: translate(' + p.x + 'px,' + p.y + 'px) scale(' + scale + ') } }';
     r.el.style.animation = 'none';
     void r.el.offsetWidth;
@@ -522,7 +522,7 @@ const PAGE_SCRIPT = `
     }
     r.el.addEventListener('animationend', done);
   }
-  window.__pet = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale };
+  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale };
 })();
 `;
 
@@ -562,7 +562,7 @@ export class CursorRenderer implements Renderer {
     await this.client.send("Page.addScriptToEvaluateOnNewDocument", { source: PAGE_SCRIPT });
     await this.client.send("Runtime.evaluate", { expression: PAGE_SCRIPT });
     const res = await this.client.send<{ result: { value: Pt | null } }>("Runtime.evaluate", {
-      expression: "window.__pet_pos || null",
+      expression: "window.__paw_pos || null",
       returnByValue: true,
     });
     if (res.result?.value) this.current = res.result.value;
@@ -592,7 +592,7 @@ export class CursorRenderer implements Renderer {
       const stepDelay = Math.max(15, (duration - path.length * 8) / path.length);
       for (const p of path) {
         await this.client.send("Runtime.evaluate", {
-          expression: `(() => { const el = document.getElementById('__pet_cursor__'); if (el) { el.style.animation = 'none'; el.style.transform = 'translate(${p.x}px,${p.y}px) scale(1)'; } window.__pet_pos = { x: ${p.x}, y: ${p.y} }; })()`,
+          expression: `(() => { const el = document.getElementById('__paw_cursor__'); if (el) { el.style.animation = 'none'; el.style.transform = 'translate(${p.x}px,${p.y}px) scale(1)'; } window.__paw_pos = { x: ${p.x}, y: ${p.y} }; })()`,
         });
         await this.client.send("Input.dispatchMouseEvent", {
           type: "mouseMoved",
@@ -611,7 +611,7 @@ export class CursorRenderer implements Renderer {
     const path = bezierPath(this.current, target, 24);
     const token = `t${++this.tokenCounter}`;
     const arrived = this.waitForToken(token);
-    const expr = `window.__pet && window.__pet.animate(${JSON.stringify(token)},${JSON.stringify(this.opts.cursor)},${this.opts.size},${JSON.stringify(path)},${duration})`;
+    const expr = `window.__paw && window.__paw.animate(${JSON.stringify(token)},${JSON.stringify(this.opts.cursor)},${this.opts.size},${JSON.stringify(path)},${duration})`;
     await this.client.send("Runtime.evaluate", { expression: expr });
     await arrived;
     this.current = target;
@@ -620,7 +620,7 @@ export class CursorRenderer implements Renderer {
   async flash(): Promise<void> {
     const token = `f${++this.tokenCounter}`;
     const arrived = this.waitForToken(token);
-    const expr = `window.__pet && window.__pet.flash(${JSON.stringify(token)},${JSON.stringify(this.opts.cursor)},${this.opts.size})`;
+    const expr = `window.__paw && window.__paw.flash(${JSON.stringify(token)},${JSON.stringify(this.opts.cursor)},${this.opts.size})`;
     await this.client.send("Runtime.evaluate", { expression: expr });
     await arrived;
   }
@@ -628,19 +628,19 @@ export class CursorRenderer implements Renderer {
   async highlight(target: string | number, color?: string): Promise<void> {
     const arg = typeof target === "number" ? String(target) : JSON.stringify(target);
     await this.client.send("Runtime.evaluate", {
-      expression: `window.__pet && window.__pet.highlight(${arg}, ${color ? JSON.stringify(color) : "null"})`,
+      expression: `window.__paw && window.__paw.highlight(${arg}, ${color ? JSON.stringify(color) : "null"})`,
     });
   }
 
   async unhighlight(): Promise<void> {
-    await this.client.send("Runtime.evaluate", { expression: "window.__pet && window.__pet.unhighlight()" });
+    await this.client.send("Runtime.evaluate", { expression: "window.__paw && window.__paw.unhighlight()" });
   }
 
   async pressScale(scale: number, durMs: number): Promise<void> {
     const token = `p${++this.tokenCounter}`;
     const arrived = this.waitForToken(token);
     await this.client.send("Runtime.evaluate", {
-      expression: `window.__pet && window.__pet.pressScale(${JSON.stringify(token)}, ${scale}, ${durMs})`,
+      expression: `window.__paw && window.__paw.pressScale(${JSON.stringify(token)}, ${scale}, ${durMs})`,
     });
     await arrived;
   }
@@ -656,7 +656,7 @@ export class CursorRenderer implements Renderer {
       });
       const timer = setTimeout(() => {
         off();
-        reject(new Error(`pet-cursor: animation timeout (${token})`));
+        reject(new Error(`paw: animation timeout (${token})`));
       }, 5000);
     });
   }

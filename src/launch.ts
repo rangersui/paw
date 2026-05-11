@@ -57,7 +57,7 @@ export async function waitForCDP(port: number, timeoutMs = 10000): Promise<void>
     } catch {}
     await new Promise((r) => setTimeout(r, 150));
   }
-  throw new Error(`pet-cursor: CDP port ${port} did not come up within ${timeoutMs}ms`);
+  throw new Error(`paw: CDP port ${port} did not come up within ${timeoutMs}ms`);
 }
 
 export interface LaunchOptions {
@@ -71,8 +71,8 @@ export async function launch(opts: LaunchOptions = {}): Promise<{ binary: string
   const port = opts.port ?? 9222;
   const url = opts.url ?? "about:blank";
   const found = findBrowser(opts.browser);
-  if (!found) throw new Error("pet-cursor: no Chromium-family browser found. install brave/chrome/edge, or pass --browser=<name>.");
-  const profileDir = opts.profileDir ?? join(homedir(), ".pet-cursor-profile");
+  if (!found) throw new Error("paw: no Chromium-family browser found. install brave/chrome/edge, or pass --browser=<name>.");
+  const profileDir = opts.profileDir ?? join(homedir(), ".paw-profile");
   const child = spawn(
     found.binary,
     [

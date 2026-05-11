@@ -2,7 +2,7 @@
  * End-to-end demo against the local elastik playground:
  *   1. PUT a rich HTML test world to http://127.0.0.1:3105/petcursor/demo.html
  *   2. Spawn a Chromium-family browser with --remote-debugging-port=9222 at that URL
- *   3. Connect pet-cursor over CDP and run through every visualized action
+ *   3. Connect paw over CDP and run through every visualized action
  *
  * Run:  ELASTIK_WRITE_TOKEN=... node examples/elastik-demo.js
  * (after `npm run build`)
@@ -16,13 +16,13 @@ import { connect } from "../src";
 const ELASTIK_URL = process.env.ELASTIK_URL ?? "http://127.0.0.1:3105";
 const TOKEN = process.env.ELASTIK_WRITE_TOKEN;
 const BROWSER =
-  process.env.PET_BROWSER ??
+  process.env.PAW_BROWSER ??
   "C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe";
 const CDP_PORT = 9222;
 const PAGE_PATH = "/petcursor/demo.html";
 
 const HTML = `<!doctype html>
-<html><head><meta charset="utf-8"><title>pet-cursor demo</title>
+<html><head><meta charset="utf-8"><title>paw demo</title>
 <style>
   body { font: 16px system-ui; margin: 0; padding: 40px; background: #fafafa; color: #222; }
   h1 { margin: 0 0 24px; }
@@ -39,7 +39,7 @@ const HTML = `<!doctype html>
   .bin { display: inline-block; padding: 18px 24px; background: #fecaca; border-radius: 8px; min-width: 120px; text-align: center; }
 </style></head>
 <body>
-  <h1>pet-cursor visual test</h1>
+  <h1>paw visual test</h1>
 
   <div class="row">
     <button id="hello">Click me</button>
@@ -131,7 +131,7 @@ async function waitForCDP(port: number, timeoutMs = 10000): Promise<void> {
     } catch {}
     await sleep(150);
   }
-  throw new Error(`pet-cursor: CDP port ${port} did not come up within ${timeoutMs}ms`);
+  throw new Error(`paw: CDP port ${port} did not come up within ${timeoutMs}ms`);
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -151,7 +151,7 @@ async function main() {
   if (await probeCDP(CDP_PORT)) {
     console.log(`✓ reusing existing CDP on ${CDP_PORT}`);
   } else {
-    const userDataDir = mkdtempSync(join(tmpdir(), "pet-cursor-"));
+    const userDataDir = mkdtempSync(join(tmpdir(), "paw-cursor-"));
     console.log(`✓ launching ${BROWSER} on port ${CDP_PORT}`);
     const child = spawn(
       BROWSER,
@@ -170,51 +170,51 @@ async function main() {
     console.log(`✓ CDP up on ${CDP_PORT}`);
   }
 
-  const pet = await connect({ port: CDP_PORT });
+  const paw = await connect({ port: CDP_PORT });
   console.log("→ navigating to fresh demo HTML");
-  await pet.goto(pageUrl);
-  console.log("✓ pet-cursor attached, starting demo in 1s...");
+  await paw.goto(pageUrl);
+  console.log("✓ paw attached, starting demo in 1s...");
   await sleep(1000);
 
   console.log("→ click #hello");
-  await pet.click("#hello");
+  await paw.click("#hello");
   await sleep(400);
 
   console.log("→ click #bye");
-  await pet.click("#bye");
+  await paw.click("#bye");
   await sleep(400);
 
   console.log("→ hover #menu1");
-  await pet.hover("#menu1");
+  await paw.hover("#menu1");
   await sleep(500);
 
   console.log("→ hover #menu2");
-  await pet.hover("#menu2");
+  await paw.hover("#menu2");
   await sleep(500);
 
   console.log("→ type into #email");
-  await pet.type("#email", "hello pet-cursor");
+  await paw.type("#email", "hello paw-cursor");
   await sleep(500);
 
   console.log("→ scroll down");
-  await pet.scroll("down", 500);
+  await paw.scroll("down", 500);
   await sleep(700);
 
   console.log("→ scroll up");
-  await pet.scroll("up", 500);
+  await paw.scroll("up", 500);
   await sleep(700);
 
   console.log("→ drag #card → #bin");
-  await pet.drag("#card", "#bin");
+  await paw.drag("#card", "#bin");
   await sleep(800);
 
-  const counter = await pet.text("#counter");
-  const log = await pet.text("#log");
+  const counter = await paw.text("#counter");
+  const log = await paw.text("#log");
   console.log(`\nfinal counter: ${counter}`);
   console.log(`page log:\n${log}`);
 
   console.log("\n✓ done. browser stays open so you can poke at it. ctrl+c to exit.");
-  await pet.close();
+  await paw.close();
 }
 
 main().catch((e) => {

@@ -2,7 +2,11 @@ import { homedir } from "node:os";
 import { appendFileSync, chmodSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-export const LOG_FILE = join(homedir(), ".pet-cursor.log");
+/**
+ * Pawprint: the audit log. Every action leaves one — on disk and (optionally)
+ * mirrored to elastik. The metaphor: PAW walks the page, pawprints stay behind.
+ */
+export const LOG_FILE = join(homedir(), ".pawprint");
 
 const ELASTIK_TIMEOUT_MS = 500;
 
@@ -14,7 +18,7 @@ function truncate(s: string, n = 200): string {
 }
 
 export async function audit(line: string, origin: Origin = "AI", overrideTs?: string): Promise<void> {
-  if (process.env.PET_NO_AUDIT) return;
+  if (process.env.PAW_NO_AUDIT) return;
   const ts = overrideTs ?? new Date().toISOString();
   const entry = `${ts} [${origin}] ${truncate(line, 500)}\n`;
 
@@ -31,19 +35,19 @@ export async function audit(line: string, origin: Origin = "AI", overrideTs?: st
   // AbortController: Node 22 fetch + abort + process.exit race causes a
   // libuv assertion on Windows. Leaked fetch settles in background; we
   // just don't block the main thread waiting for it.
-  const elastik = process.env.PET_ELASTIK;
+  const elastik = process.env.PAW_ELASTIK;
   if (elastik) {
     const headers: Record<string, string> = { "Content-Type": "text/plain" };
-    const token = process.env.PET_ELASTIK_TOKEN || process.env.ELASTIK_WRITE_TOKEN;
+    const token = process.env.PAW_ELASTIK_TOKEN || process.env.ELASTIK_WRITE_TOKEN;
     if (token) headers["Authorization"] = `Bearer ${token}`;
     // PUT (not POST) — each audit entry is a fresh world at a unique
     // timestamp path. PUT creates-or-replaces; POST appends-to-existing
     // and 404s when the path is new (elastik V6 semantics).
-    // /home/log/pet/* — elastik V6 only allows writes under valid path
+    // /home/pawprint/* — elastik V6 only allows writes under valid path
     // prefixes (/home /etc /lib /boot /usr /var /tmp /dev /sys). /var is a
     // system world that requires the approve token; /home only needs write
-    // token. /log/* (no prefix) gets a flat 404.
-    const fetchP = fetch(`${elastik.replace(/\/$/, "")}/home/log/pet/${ts}`, {
+    // token. /pawprint/* (no prefix) gets a flat 404.
+    const fetchP = fetch(`${elastik.replace(/\/$/, "")}/home/pawprint/${ts}`, {
       method: "PUT",
       body: `[${origin}] ${line}`,
       headers,

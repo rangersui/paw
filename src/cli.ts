@@ -1,6 +1,6 @@
 import { writeFileSync, readFileSync } from "node:fs";
 import { CDPClient } from "./cdp";
-import { connect, PetCursor, Target, LogEntry, SpeedPreset } from "./wrapper";
+import { connect, Paw, Target, LogEntry, SpeedPreset } from "./wrapper";
 import { loadState, saveState, clearState, STATE_FILE } from "./state";
 import { launch, findBrowser } from "./launch";
 import { audit, describeTarget, LOG_FILE } from "./audit";
@@ -21,74 +21,74 @@ function tokenize(line: string): string[] {
   return out;
 }
 
-async function runBatchVerb(pet: PetCursor, verb: string, args: string[]): Promise<void> {
+async function runBatchVerb(paw: Paw, verb: string, args: string[]): Promise<void> {
   switch (verb) {
     case "click":
-      await pet.click(parseTarget(args[0]));
+      await paw.click(parseTarget(args[0]));
       break;
     case "dblclick":
-      await pet.dblclick(parseTarget(args[0]));
+      await paw.dblclick(parseTarget(args[0]));
       break;
     case "rightclick":
-      await pet.rightclick(parseTarget(args[0]));
+      await paw.rightclick(parseTarget(args[0]));
       break;
     case "hover":
-      await pet.hover(parseTarget(args[0]));
+      await paw.hover(parseTarget(args[0]));
       break;
     case "type":
-      await pet.type(parseTarget(args[0]), args.slice(1).join(" "));
+      await paw.type(parseTarget(args[0]), args.slice(1).join(" "));
       break;
     case "keypress":
-      await pet.keypress(args[0]);
+      await paw.keypress(args[0]);
       break;
     case "drag":
-      await pet.drag(parseTarget(args[0]), parseTarget(args[1]));
+      await paw.drag(parseTarget(args[0]), parseTarget(args[1]));
       break;
     case "scroll":
-      await pet.scroll((args[0] || "down") as any, args[1] ? parseInt(args[1], 10) : 400);
+      await paw.scroll((args[0] || "down") as any, args[1] ? parseInt(args[1], 10) : 400);
       break;
     case "goto":
-      await pet.goto(args[0]);
+      await paw.goto(args[0]);
       break;
     case "wait-idle":
-      await pet.waitIdle(args[0] ? parseInt(args[0], 10) : 500);
+      await paw.waitIdle(args[0] ? parseInt(args[0], 10) : 500);
       break;
     case "wait":
-      await pet.waitFor(parseTarget(args[0]));
+      await paw.waitFor(parseTarget(args[0]));
       break;
     case "dismiss-cookies":
-      await pet.dismissCookies(args[0] === "--reject" ? "reject" : "accept");
+      await paw.dismissCookies(args[0] === "--reject" ? "reject" : "accept");
       break;
     case "snapshot":
-      await pet.snapshot();
+      await paw.snapshot();
       break;
     case "sleep":
       await new Promise((r) => setTimeout(r, parseInt(args[0] || "0", 10)));
       break;
     case "eval":
-      await pet.eval(args.join(" "));
+      await paw.eval(args.join(" "));
       break;
     default:
-      throw new Error(`pet batch: verb "${verb}" not supported in batch mode`);
+      throw new Error(`paw batch: verb "${verb}" not supported in batch mode`);
   }
   await audit(`batch:${verb} ${args.join(" ")}`);
 }
 
-async function withSession<T>(fn: (pet: PetCursor) => Promise<T>, opts: { pace?: SpeedPreset; silent?: boolean; readOnly?: boolean } = {}): Promise<T> {
+async function withSession<T>(fn: (paw: Paw) => Promise<T>, opts: { pace?: SpeedPreset; silent?: boolean; readOnly?: boolean } = {}): Promise<T> {
   const s = loadState();
-  const pet = await connect({ wsUrl: s.WS_URL, pace: opts.pace });
-  if (opts.silent) pet.silent = true;
+  const paw = await connect({ wsUrl: s.WS_URL, pace: opts.pace });
+  if (opts.silent) paw.silent = true;
   // Drain page-side human-takeover buffer FIRST so audit logs stay in temporal order
-  const humanEntries = await pet.drainHumanLog();
+  const humanEntries = await paw.drainHumanLog();
   for (const e of humanEntries) {
     await audit(`grab (${e.from.x},${e.from.y}) → (${e.to.x},${e.to.y})`, "HUMAN-TAKEOVER", e.endTs);
   }
   // Block mutating actions until the human releases the wheel
-  if (!opts.readOnly) await pet.waitForUngrab();
+  if (!opts.readOnly) await paw.waitForUngrab();
   try {
-    return await fn(pet);
+    return await fn(paw);
   } finally {
-    await pet.close();
+    await paw.close();
   }
 }
 
@@ -96,7 +96,7 @@ function parseSilent(flags: Record<string, string | boolean>): boolean {
   if (flags.silent) return true;
   if (flags.renderer === "none") return true;
   if (flags.renderer && flags.renderer !== "cursor" && flags.renderer !== "none") {
-    throw new Error(`pet: --renderer "${flags.renderer}" not yet implemented. v0.1 supports: cursor (default), none. PetRenderer planned v0.3, HighlightRenderer v0.4.`);
+    throw new Error(`paw: --renderer "${flags.renderer}" not yet implemented. v0.1 supports: cursor (default), none. PetRenderer planned v0.3, HighlightRenderer v0.4.`);
   }
   return false;
 }
@@ -111,7 +111,7 @@ function parsePace(flags: Record<string, string | boolean>): SpeedPreset | undef
 }
 
 function parseTarget(s: string | undefined): Target {
-  if (s === undefined) throw new Error("pet: missing target (snapshot index or selector)");
+  if (s === undefined) throw new Error("paw: missing target (snapshot index or selector)");
   const n = Number(s);
   return Number.isInteger(n) && n > 0 ? n : s;
 }
@@ -162,64 +162,64 @@ function fmtSnapshot(entries: { role: string; name: string; offscreen: boolean }
   return lines.join("\n");
 }
 
-const HELP = `pet — visualized CDP client. AI-driven, curl-shaped, depth-1.
+const HELP = `paw — visualized CDP client. AI-driven, curl-shaped, depth-1.
 
-  pet start [brave|chrome|edge] [--url U] [--port P]   auto-launch + connect
-  pet connect <port> [url-substring]    open session (writes ${STATE_FILE})
-  pet close                             clear session file
-  pet snapshot                          list ALL interactive elements (numbered)
-  pet visible                           only elements in current viewport (what the human sees)
-  pet show <text|sel>                   scrollIntoView a text substring or CSS selector
-  pet nearby [--radius N] [--limit N]   only elements within radius of cursor (saves tokens)
-  pet dismiss-cookies [--reject|--list] kill OneTrust/Cookiebot/Didomi/... banners
-  pet log [--since Ns] [--type T] [--status '>=N']   dump page log (console+net+error)
-  pet log clear                         empty buffer
-  pet wait-idle [stableMs=500] [--timeout N=30000]   block until network quiet
+  paw start [brave|chrome|edge] [--url U] [--port P]   auto-launch + connect
+  paw connect <port> [url-substring]    open session (writes ${STATE_FILE})
+  paw close                             clear session file
+  paw snapshot                          list ALL interactive elements (numbered)
+  paw visible                           only elements in current viewport (what the human sees)
+  paw show <text|sel>                   scrollIntoView a text substring or CSS selector
+  paw nearby [--radius N] [--limit N]   only elements within radius of cursor (saves tokens)
+  paw dismiss-cookies [--reject|--list] kill OneTrust/Cookiebot/Didomi/... banners
+  paw log [--since Ns] [--type T] [--status '>=N']   dump page log (console+net+error)
+  paw log clear                         empty buffer
+  paw wait-idle [stableMs=500] [--timeout N=30000]   block until network quiet
 
-  pet click <n|sel> [--speed fast|normal|slow] [--right|--middle]  cursor walks → highlight → real click
-  pet dblclick <n|sel> [--speed S]
-  pet rightclick <n|sel> [--speed S]
-  pet hover <n|sel> [--speed S]
-  pet type <n|sel> <text|@file|-> [--speed S]   click + Input.insertText
-  pet keypress <key>                    e.g. Enter, Tab, ArrowDown
-  pet drag <from> <to>                  press → move-with-button → release
-  pet scroll <up|down|left|right> [px]
+  paw click <n|sel> [--speed fast|normal|slow] [--right|--middle]  cursor walks → highlight → real click
+  paw dblclick <n|sel> [--speed S]
+  paw rightclick <n|sel> [--speed S]
+  paw hover <n|sel> [--speed S]
+  paw type <n|sel> <text|@file|-> [--speed S]   click + Input.insertText
+  paw keypress <key>                    e.g. Enter, Tab, ArrowDown
+  paw drag <from> <to>                  press → move-with-button → release
+  paw scroll <up|down|left|right> [px]
 
   cursor as a first-class object (compose any motion):
-  pet move <x> <y> [--speed S]          cursor walks to absolute viewport coords
-  pet moveby <dx> <dy>                  cursor walks by relative offset
-  pet press [--right|--middle]          mouseDown at current cursor pos
-  pet release [--right|--middle]        mouseUp at current cursor pos
+  paw move <x> <y> [--speed S]          cursor walks to absolute viewport coords
+  paw moveby <dx> <dy>                  cursor walks by relative offset
+  paw press [--right|--middle]          mouseDown at current cursor pos
+  paw release [--right|--middle]        mouseUp at current cursor pos
 
-  pet goto <url>                        Page.navigate (waits for load)
-  pet eval <expr|@file.js|->            Runtime.evaluate; expr from file (@) or stdin (-)
-  pet screenshot [path]                 default: ./screenshot.png
-  pet text <n|sel>                      textContent
-  pet html [sel]                        outerHTML, defaults to <html>
-  pet wait <n|sel> [--timeout ms]       poll until present
-  pet position                          current cursor x y
-  pet box <sel>                         bounding rect
+  paw goto <url>                        Page.navigate (waits for load)
+  paw eval <expr|@file.js|->            Runtime.evaluate; expr from file (@) or stdin (-)
+  paw screenshot [path]                 default: ./screenshot.png
+  paw text <n|sel>                      textContent
+  paw html [sel]                        outerHTML, defaults to <html>
+  paw wait <n|sel> [--timeout ms]       poll until present
+  paw position                          current cursor x y
+  paw box <sel>                         bounding rect
 
-  pet batch [@file|-]                   run multiple verbs in ONE CDP session (stdin or file)
-  pet stay                              pin cursor in place (no idle rest)
-  pet unstay                            re-enable 5s idle rest
-  pet auto                              (info) auto is the default
-  pet play                              interactive WASD (v0.6, not yet)
-  pet help [verb]
+  paw batch [@file|-]                   run multiple verbs in ONE CDP session (stdin or file)
+  paw stay                              pin cursor in place (no idle rest)
+  paw unstay                            re-enable 5s idle rest
+  paw auto                              (info) auto is the default
+  paw play                              interactive WASD (v0.6, not yet)
+  paw help [verb]
 
 target = positive integer (snapshot/nearby index) or CSS selector
 speed  = fast (~280ms) | normal (~1.4s, default) | slow (~3.5s, demo)
          each click does: bezier move → highlight → press-shrink → release → pause
-         PET_SPEED=fast for global default, --speed S to override per call
+         PAW_SPEED=fast for global default, --speed S to override per call
 silent = --silent or --renderer none → real CDP fires, no cursor/highlight
-         --renderer cursor (default). pet|highlight reserved for v0.3+
+         --renderer cursor (default). paw|highlight reserved for v0.3+
 output = plain text. no JSON envelopes anywhere.
-state  = ~/.pet-cursor (KEY=VALUE, shell-sourceable)
-audit  = ~/.pet-cursor.log (every action, ISO ts + line, append-only, mode 0600)
-         PET_ELASTIK=http://host:port  also PUT each action to /home/log/pet/<iso>
-         PET_ELASTIK_TOKEN=... (or ELASTIK_WRITE_TOKEN=...) for write auth
-         PET_NO_AUDIT=1                disable both local and remote audit
-         consumer side: \`curl PET_ELASTIK/listen/home/log/pet/*\` for SSE stream`;
+state  = ~/.paw (KEY=VALUE, shell-sourceable)
+audit  = ~/.paw.log (every action, ISO ts + line, append-only, mode 0600)
+         PAW_ELASTIK=http://host:port  also PUT each action to /home/log/paw/<iso>
+         PAW_ELASTIK_TOKEN=... (or ELASTIK_WRITE_TOKEN=...) for write auth
+         PAW_NO_AUDIT=1                disable both local and remote audit
+         consumer side: \`curl PAW_ELASTIK/listen/home/log/paw/*\` for SSE stream`;
 
 interface Flags {
   pos: string[];
@@ -267,8 +267,8 @@ async function main(): Promise<number> {
         PAGE_URL: target.url,
         TITLE: target.title,
       });
-      const pet = await connect({ wsUrl: target.webSocketDebuggerUrl });
-      await pet.close();
+      const paw = await connect({ wsUrl: target.webSocketDebuggerUrl });
+      await paw.close();
       console.log(`started ${r.brand} (${r.binary}) on port ${port}`);
       console.log(`         ↳ ${target.url}`);
       console.log(`         ↳ ${STATE_FILE}`);
@@ -278,7 +278,7 @@ async function main(): Promise<number> {
 
     case "dismiss-cookies": {
       const action: "accept" | "reject" | "list" = flags.list ? "list" : flags.reject ? "reject" : "accept";
-      const r = await withSession((pet) => pet.dismissCookies(action));
+      const r = await withSession((paw) => paw.dismissCookies(action));
       if (action === "list") {
         if (r.candidates.length === 0) console.log("no CMP detected");
         else r.candidates.forEach((c) => console.log(c));
@@ -294,14 +294,14 @@ async function main(): Promise<number> {
 
     case "log": {
       if (pos[0] === "clear") {
-        await withSession((pet) => pet.clearLog(), { readOnly: true });
+        await withSession((paw) => paw.clearLog(), { readOnly: true });
         console.log("log cleared");
         return 0;
       }
       const since = flags.since ? parseSince(String(flags.since)) : 0;
       const type = flags.type ? String(flags.type) : "";
       const statusFilter = flags.status ? parseStatusFilter(String(flags.status)) : null;
-      const entries = await withSession((pet) => pet.getLog(), { readOnly: true });
+      const entries = await withSession((paw) => paw.getLog(), { readOnly: true });
       const now = Date.now();
       const filtered = entries.filter((e) => {
         if (since && now - e.t > since) return false;
@@ -325,7 +325,7 @@ async function main(): Promise<number> {
     case "wait-idle": {
       const stable = pos[0] ? parseInt(pos[0], 10) : 500;
       const timeout = flags.timeout ? parseInt(String(flags.timeout), 10) : 30000;
-      await withSession((pet) => pet.waitIdle(stable, timeout), { readOnly: true });
+      await withSession((paw) => paw.waitIdle(stable, timeout), { readOnly: true });
       console.log(`idle (stable ${stable}ms)`);
       return 0;
     }
@@ -345,8 +345,8 @@ async function main(): Promise<number> {
         PAGE_URL: target.url,
         TITLE: target.title,
       });
-      const pet = await connect({ wsUrl: target.webSocketDebuggerUrl });
-      await pet.close();
+      const paw = await connect({ wsUrl: target.webSocketDebuggerUrl });
+      await paw.close();
       console.log(`connected → ${target.title || "(untitled)"}`);
       console.log(`         ↳ ${target.url}`);
       console.log(`         ↳ ${STATE_FILE}`);
@@ -362,18 +362,18 @@ async function main(): Promise<number> {
     }
 
     case "snapshot": {
-      await withSession(async (pet) => {
-        const entries = await pet.snapshot();
+      await withSession(async (paw) => {
+        const entries = await paw.snapshot();
         console.log(fmtSnapshot(entries));
-        const url = await pet.eval<string>("location.href");
+        const url = await paw.eval<string>("location.href");
         await audit(`snapshot ${entries.length} elements at ${url}`);
       }, { readOnly: true });
       return 0;
     }
 
     case "visible": {
-      await withSession(async (pet) => {
-        const entries = await pet.visible();
+      await withSession(async (paw) => {
+        const entries = await paw.visible();
         if (!entries.length) {
           console.log("(no interactive elements in current viewport)");
         } else {
@@ -392,9 +392,9 @@ async function main(): Promise<number> {
 
     case "show": {
       const target = pos.join(" ");
-      if (!target) throw new Error("pet show: missing target (text substring or CSS selector)");
-      await withSession(async (pet) => {
-        const r = await pet.show(target);
+      if (!target) throw new Error("paw show: missing target (text substring or CSS selector)");
+      await withSession(async (paw) => {
+        const r = await paw.show(target);
         if (!r) {
           console.log(`not found: ${target}`);
           process.exit(2 as any);
@@ -409,8 +409,8 @@ async function main(): Promise<number> {
     case "nearby": {
       const radius = flags.radius ? parseInt(String(flags.radius), 10) : 200;
       const limit = flags.limit ? parseInt(String(flags.limit), 10) : 12;
-      await withSession(async (pet) => {
-        const entries = await pet.nearby(radius, limit);
+      await withSession(async (paw) => {
+        const entries = await paw.nearby(radius, limit);
         if (!entries.length) {
           console.log(`(no interactive elements within ${radius}px of cursor)`);
         } else {
@@ -433,10 +433,10 @@ async function main(): Promise<number> {
       const t = parseTarget(pos[0]);
       const button = flags.right ? "right" : flags.middle ? "middle" : "left";
       const pace = parsePace(flags);
-      await withSession(async (pet) => {
-        const desc = await describeTarget((n) => pet.entry(n), t);
-        await pet.click(t, button as any);
-        const p = pet.position();
+      await withSession(async (paw) => {
+        const desc = await describeTarget((n) => paw.entry(n), t);
+        await paw.click(t, button as any);
+        const p = paw.position();
         await audit(`click ${desc} at (${Math.round(p.x)},${Math.round(p.y)})${button === "left" ? "" : " " + button}`);
       }, { pace, silent: parseSilent(flags) });
       return 0;
@@ -445,10 +445,10 @@ async function main(): Promise<number> {
     case "dblclick": {
       const t = parseTarget(pos[0]);
       const pace = parsePace(flags);
-      await withSession(async (pet) => {
-        const desc = await describeTarget((n) => pet.entry(n), t);
-        await pet.dblclick(t);
-        const p = pet.position();
+      await withSession(async (paw) => {
+        const desc = await describeTarget((n) => paw.entry(n), t);
+        await paw.dblclick(t);
+        const p = paw.position();
         await audit(`dblclick ${desc} at (${Math.round(p.x)},${Math.round(p.y)})`);
       }, { pace, silent: parseSilent(flags) });
       return 0;
@@ -457,10 +457,10 @@ async function main(): Promise<number> {
     case "rightclick": {
       const t = parseTarget(pos[0]);
       const pace = parsePace(flags);
-      await withSession(async (pet) => {
-        const desc = await describeTarget((n) => pet.entry(n), t);
-        await pet.rightclick(t);
-        const p = pet.position();
+      await withSession(async (paw) => {
+        const desc = await describeTarget((n) => paw.entry(n), t);
+        await paw.rightclick(t);
+        const p = paw.position();
         await audit(`rightclick ${desc} at (${Math.round(p.x)},${Math.round(p.y)})`);
       }, { pace, silent: parseSilent(flags) });
       return 0;
@@ -469,10 +469,10 @@ async function main(): Promise<number> {
     case "hover": {
       const t = parseTarget(pos[0]);
       const pace = parsePace(flags);
-      await withSession(async (pet) => {
-        const desc = await describeTarget((n) => pet.entry(n), t);
-        await pet.hover(t);
-        const p = pet.position();
+      await withSession(async (paw) => {
+        const desc = await describeTarget((n) => paw.entry(n), t);
+        await paw.hover(t);
+        const p = paw.position();
         await audit(`hover ${desc} at (${Math.round(p.x)},${Math.round(p.y)})`);
       }, { pace, silent: parseSilent(flags) });
       return 0;
@@ -480,12 +480,12 @@ async function main(): Promise<number> {
 
     case "type": {
       const t = parseTarget(pos[0]);
-      if (pos.length < 2) throw new Error("pet type: missing text (use `@file.txt` or `-` for stdin)");
+      if (pos.length < 2) throw new Error("paw type: missing text (use `@file.txt` or `-` for stdin)");
       const text = (pos[1] === "-" || pos[1].startsWith("@")) ? readSource(pos[1]) : pos.slice(1).join(" ");
       const pace = parsePace(flags);
-      await withSession(async (pet) => {
-        const desc = await describeTarget((n) => pet.entry(n), t);
-        await pet.type(t, text);
+      await withSession(async (paw) => {
+        const desc = await describeTarget((n) => paw.entry(n), t);
+        await paw.type(t, text);
         const preview = text.length > 40 ? text.slice(0, 37) + "..." : text;
         await audit(`type ${desc} "${preview.replace(/"/g, '\\"')}" (${text.length} chars)`);
       }, { pace, silent: parseSilent(flags) });
@@ -494,8 +494,8 @@ async function main(): Promise<number> {
 
     case "keypress": {
       const key = pos[0];
-      if (!key) throw new Error("pet keypress: missing key");
-      await withSession((pet) => pet.keypress(key));
+      if (!key) throw new Error("paw keypress: missing key");
+      await withSession((paw) => paw.keypress(key));
       await audit(`keypress ${key}`);
       return 0;
     }
@@ -503,10 +503,10 @@ async function main(): Promise<number> {
     case "drag": {
       const a = parseTarget(pos[0]);
       const b = parseTarget(pos[1]);
-      await withSession(async (pet) => {
-        const da = await describeTarget((n) => pet.entry(n), a);
-        const db = await describeTarget((n) => pet.entry(n), b);
-        await pet.drag(a, b);
+      await withSession(async (paw) => {
+        const da = await describeTarget((n) => paw.entry(n), a);
+        const db = await describeTarget((n) => paw.entry(n), b);
+        await paw.drag(a, b);
         await audit(`drag ${da} → ${db}`);
       });
       return 0;
@@ -515,26 +515,26 @@ async function main(): Promise<number> {
     case "scroll": {
       const dir = (pos[0] || "down") as "up" | "down" | "left" | "right";
       const px = pos[1] ? parseInt(pos[1], 10) : 400;
-      await withSession((pet) => pet.scroll(dir, px));
+      await withSession((paw) => paw.scroll(dir, px));
       await audit(`scroll ${dir} ${px}px`);
       return 0;
     }
 
     case "goto": {
       const url = pos[0];
-      if (!url) throw new Error("pet goto: missing url");
-      await withSession((pet) => pet.goto(url));
+      if (!url) throw new Error("paw goto: missing url");
+      await withSession((paw) => paw.goto(url));
       await audit(`goto ${url}`);
       return 0;
     }
 
     case "eval": {
-      if (!pos.length) throw new Error("pet eval: missing expression (use `@file.js` or `-` for stdin)");
+      if (!pos.length) throw new Error("paw eval: missing expression (use `@file.js` or `-` for stdin)");
       const expr = (pos[0] === "-" || pos[0].startsWith("@")) ? readSource(pos[0]) : pos.join(" ");
       // eval is the god-mode escape hatch. Even during human takeover the
       // human needs to be able to inspect/reset state via eval — otherwise
-      // a stuck __pet_human_grabbing flag self-deadlocks.
-      const v = await withSession((pet) => pet.eval(expr), { readOnly: true });
+      // a stuck __paw_human_grabbing flag self-deadlocks.
+      const v = await withSession((paw) => paw.eval(expr), { readOnly: true });
       if (v === undefined || v === null) console.log(String(v));
       else if (typeof v === "object") console.log(require("util").inspect(v, { depth: 4, colors: false, breakLength: 100 }));
       else console.log(String(v));
@@ -545,7 +545,7 @@ async function main(): Promise<number> {
 
     case "screenshot": {
       const path = pos[0] || "screenshot.png";
-      const buf = await withSession((pet) => pet.screenshot(), { readOnly: true });
+      const buf = await withSession((paw) => paw.screenshot(), { readOnly: true });
       writeFileSync(path, buf);
       console.log(path);
       await audit(`screenshot ${path} (${buf.length} bytes)`);
@@ -553,7 +553,7 @@ async function main(): Promise<number> {
     }
 
     case "text": {
-      const v = await withSession((pet) => pet.text(parseTarget(pos[0])), { readOnly: true });
+      const v = await withSession((paw) => paw.text(parseTarget(pos[0])), { readOnly: true });
       if (v !== null) process.stdout.write(v + "\n");
       else process.exit(2);
       return 0;
@@ -561,7 +561,7 @@ async function main(): Promise<number> {
 
     case "html": {
       const t = pos[0] ? parseTarget(pos[0]) : "html";
-      const v = await withSession((pet) => pet.html(t as any), { readOnly: true });
+      const v = await withSession((paw) => paw.html(t as any), { readOnly: true });
       if (v !== null) process.stdout.write(v + "\n");
       else process.exit(2);
       return 0;
@@ -570,13 +570,13 @@ async function main(): Promise<number> {
     case "wait": {
       const t = parseTarget(pos[0]);
       const timeout = flags.timeout ? parseInt(String(flags.timeout), 10) : 5000;
-      await withSession((pet) => pet.waitFor(t, timeout), { readOnly: true });
+      await withSession((paw) => paw.waitFor(t, timeout), { readOnly: true });
       return 0;
     }
 
     case "position": {
-      await withSession(async (pet) => {
-        const p = pet.position();
+      await withSession(async (paw) => {
+        const p = paw.position();
         console.log(`x=${Math.round(p.x)} y=${Math.round(p.y)}`);
       }, { readOnly: true });
       return 0;
@@ -585,10 +585,10 @@ async function main(): Promise<number> {
     case "move": {
       const x = parseInt(pos[0], 10);
       const y = parseInt(pos[1], 10);
-      if (Number.isNaN(x) || Number.isNaN(y)) throw new Error("pet move: requires <x> <y> integers");
+      if (Number.isNaN(x) || Number.isNaN(y)) throw new Error("paw move: requires <x> <y> integers");
       const pace = parsePace(flags);
-      await withSession(async (pet) => {
-        await pet.moveTo(x, y);
+      await withSession(async (paw) => {
+        await paw.moveTo(x, y);
         await audit(`move (${x},${y})`);
       }, { pace, silent: parseSilent(flags) });
       return 0;
@@ -597,10 +597,10 @@ async function main(): Promise<number> {
     case "moveby": {
       const dx = parseInt(pos[0], 10);
       const dy = parseInt(pos[1], 10);
-      if (Number.isNaN(dx) || Number.isNaN(dy)) throw new Error("pet moveby: requires <dx> <dy> integers");
+      if (Number.isNaN(dx) || Number.isNaN(dy)) throw new Error("paw moveby: requires <dx> <dy> integers");
       const pace = parsePace(flags);
-      await withSession(async (pet) => {
-        const result = await pet.moveBy(dx, dy);
+      await withSession(async (paw) => {
+        const result = await paw.moveBy(dx, dy);
         console.log(`x=${Math.round(result.x)} y=${Math.round(result.y)}`);
         await audit(`moveby (${dx},${dy}) → (${Math.round(result.x)},${Math.round(result.y)})`);
       }, { pace, silent: parseSilent(flags) });
@@ -609,9 +609,9 @@ async function main(): Promise<number> {
 
     case "press": {
       const button = flags.right ? "right" : flags.middle ? "middle" : "left";
-      await withSession(async (pet) => {
-        await pet.press(button as any);
-        const p = pet.position();
+      await withSession(async (paw) => {
+        await paw.press(button as any);
+        const p = paw.position();
         await audit(`press ${button} at (${Math.round(p.x)},${Math.round(p.y)})`);
       });
       return 0;
@@ -619,9 +619,9 @@ async function main(): Promise<number> {
 
     case "release": {
       const button = flags.right ? "right" : flags.middle ? "middle" : "left";
-      await withSession(async (pet) => {
-        await pet.release(button as any);
-        const p = pet.position();
+      await withSession(async (paw) => {
+        await paw.release(button as any);
+        const p = paw.position();
         await audit(`release ${button} at (${Math.round(p.x)},${Math.round(p.y)})`);
       });
       return 0;
@@ -629,9 +629,9 @@ async function main(): Promise<number> {
 
     case "box": {
       const sel = pos[0];
-      if (!sel) throw new Error("pet box: missing selector");
-      await withSession(async (pet) => {
-        const b = await pet.box(sel);
+      if (!sel) throw new Error("paw box: missing selector");
+      await withSession(async (paw) => {
+        const b = await paw.box(sel);
         console.log(`x=${Math.round(b.x)} y=${Math.round(b.y)} w=${Math.round(b.w)} h=${Math.round(b.h)}`);
       }, { readOnly: true });
       return 0;
@@ -643,11 +643,11 @@ async function main(): Promise<number> {
       const pace = parsePace(flags);
       const silent = parseSilent(flags);
       let executed = 0;
-      await withSession(async (pet) => {
+      await withSession(async (paw) => {
         for (const line of lines) {
           const tokens = tokenize(line);
           if (!tokens.length) continue;
-          await runBatchVerb(pet, tokens[0], tokens.slice(1));
+          await runBatchVerb(paw, tokens[0], tokens.slice(1));
           executed++;
         }
       }, { pace, silent });
@@ -657,23 +657,23 @@ async function main(): Promise<number> {
     }
 
     case "auto": {
-      console.log("pet: auto mode is already the default. every verb runs autonomously without prompting.");
-      console.log("     use `pet play` for interactive WASD control (v0.6 — not yet implemented).");
+      console.log("paw: auto mode is already the default. every verb runs autonomously without prompting.");
+      console.log("     use `paw play` for interactive WASD control (v0.6 — not yet implemented).");
       return 0;
     }
 
     case "stay": {
-      await withSession(async (pet) => {
-        await pet.eval("window.__pet && window.__pet.stay()");
+      await withSession(async (paw) => {
+        await paw.eval("window.__paw && window.__paw.stay()");
       });
-      console.log("stay: cursor will not rest. run `pet unstay` to re-enable.");
+      console.log("stay: cursor will not rest. run `paw unstay` to re-enable.");
       await audit("stay");
       return 0;
     }
 
     case "unstay": {
-      await withSession(async (pet) => {
-        await pet.eval("window.__pet && window.__pet.unstay()");
+      await withSession(async (paw) => {
+        await paw.eval("window.__paw && window.__paw.unstay()");
       });
       console.log("unstay: cursor will rest after 5s idle.");
       await audit("unstay");
@@ -681,13 +681,13 @@ async function main(): Promise<number> {
     }
 
     case "play": {
-      console.error("pet play: interactive WASD game mode is on the v0.6 roadmap, not yet implemented.");
-      console.error("          for now, drive pet from any shell with pet click/type/etc.");
+      console.error("paw play: interactive WASD game mode is on the v0.6 roadmap, not yet implemented.");
+      console.error("          for now, drive paw from any shell with paw click/type/etc.");
       return 78;
     }
 
     default:
-      console.error(`pet: unknown verb "${verb}". try \`pet help\`.`);
+      console.error(`paw: unknown verb "${verb}". try \`paw help\`.`);
       return 64;
   }
 }
@@ -699,6 +699,6 @@ main()
     process.exitCode = code;
   })
   .catch((e) => {
-    console.error(`pet: ${e.message ?? e}`);
+    console.error(`paw: ${e.message ?? e}`);
     process.exitCode = 1;
   });

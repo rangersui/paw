@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { existsSync, readFileSync, writeFileSync, unlinkSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 
-export const STATE_FILE = join(homedir(), ".pet-cursor");
+export const STATE_FILE = join(homedir(), ".paw");
 
 export interface State {
   HOST: string;
@@ -14,7 +14,7 @@ export interface State {
 
 export function loadState(): State {
   if (!existsSync(STATE_FILE)) {
-    throw new Error(`pet: no session. run \`pet connect <port>\` first.`);
+    throw new Error(`paw: no session. run \`paw connect <port>\` first.`);
   }
   const raw = readFileSync(STATE_FILE, "utf8");
   const out: Record<string, string> = {};
@@ -25,13 +25,13 @@ export function loadState(): State {
     if (eq < 0) continue;
     out[t.slice(0, eq)] = t.slice(eq + 1);
   }
-  if (!out.WS_URL) throw new Error(`pet: malformed state at ${STATE_FILE} — missing WS_URL`);
+  if (!out.WS_URL) throw new Error(`paw: malformed state at ${STATE_FILE} — missing WS_URL`);
   return out as unknown as State;
 }
 
 export function saveState(s: State): void {
   const lines = [
-    `# pet-cursor session — written by \`pet connect\``,
+    `# paw session — written by \`paw connect\``,
     `HOST=${s.HOST}`,
     `PORT=${s.PORT}`,
     `WS_URL=${s.WS_URL}`,
