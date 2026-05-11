@@ -150,6 +150,24 @@ export class PetCursor {
     return res.result?.value ?? [];
   }
 
+  /** Snapshot filtered to only viewport-visible elements — what the human can actually see right now. */
+  async visible(): Promise<(SnapshotEntry & { idx: number })[]> {
+    const res = await this.client.send<{ result: { value: any[] } }>("Runtime.evaluate", {
+      expression: "window.__pet.visible()",
+      returnByValue: true,
+    });
+    return res.result?.value ?? [];
+  }
+
+  /** Scroll a text-substring or CSS selector into viewport center. Bridges the AI/human visual gap. */
+  async show(target: string): Promise<{ tag: string; text: string; rect: { x: number; y: number; w: number; h: number } } | null> {
+    const res = await this.client.send<{ result: { value: any } }>("Runtime.evaluate", {
+      expression: `window.__pet.show(${JSON.stringify(target)})`,
+      returnByValue: true,
+    });
+    return res.result?.value ?? null;
+  }
+
   async entry(n: number): Promise<SnapshotEntry> {
     const res = await this.client.send<{ result: { value: SnapshotEntry | null } }>("Runtime.evaluate", {
       expression: `(window.__pet_snapshot && window.__pet_snapshot[${n}]) || null`,

@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__petArrived";
-const SCRIPT_VERSION = 14;
+const SCRIPT_VERSION = 16;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -393,6 +393,46 @@ const PAGE_SCRIPT = `
     scheduleRest();
     return out;
   }
+  function visible() {
+    if (!window.__pet_snapshot) snapshot();
+    const snap = window.__pet_snapshot || [];
+    const out = [];
+    for (let i = 1; i < snap.length; i++) {
+      if (snap[i] && !snap[i].offscreen) out.push(Object.assign({ idx: i }, snap[i]));
+    }
+    scheduleRest();
+    return out;
+  }
+  function show(target) {
+    // Try CSS selector first
+    let el = null;
+    try { el = document.querySelector(target); } catch (e) {}
+    // Then text-content search with whitespace normalization (handles nbsp  ,
+    // em-spaces, tabs, line-breaks — common in i18n web text).
+    if (!el) {
+      const norm = function (s) { return String(s || '').replace(/\\s+/g, ' ').trim(); };
+      const tNorm = norm(target);
+      const all = document.querySelectorAll('body *');
+      for (let i = 0; i < all.length; i++) {
+        const e = all[i];
+        if (e.children.length > 8) continue;
+        const txt = norm(e.textContent);
+        if (txt.length === 0 || txt.length > 500) continue;
+        if (txt.indexOf(tNorm) >= 0) {
+          const r = e.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0) { el = e; break; }
+        }
+      }
+    }
+    if (!el) return null;
+    try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) {}
+    const r = el.getBoundingClientRect();
+    return {
+      tag: el.tagName.toLowerCase(),
+      text: (el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 200),
+      rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
+    };
+  }
   function nearby(radius, limit) {
     scheduleRest();
     if (!window.__pet_snapshot) snapshot();
@@ -482,7 +522,7 @@ const PAGE_SCRIPT = `
     }
     r.el.addEventListener('animationend', done);
   }
-  window.__pet = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale };
+  window.__pet = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale };
 })();
 `;
 

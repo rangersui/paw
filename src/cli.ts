@@ -168,6 +168,8 @@ const HELP = `pet — visualized CDP client. AI-driven, curl-shaped, depth-1.
   pet connect <port> [url-substring]    open session (writes ${STATE_FILE})
   pet close                             clear session file
   pet snapshot                          list ALL interactive elements (numbered)
+  pet visible                           only elements in current viewport (what the human sees)
+  pet show <text|sel>                   scrollIntoView a text substring or CSS selector
   pet nearby [--radius N] [--limit N]   only elements within radius of cursor (saves tokens)
   pet dismiss-cookies [--reject|--list] kill OneTrust/Cookiebot/Didomi/... banners
   pet log [--since Ns] [--type T] [--status '>=N']   dump page log (console+net+error)
@@ -366,6 +368,41 @@ async function main(): Promise<number> {
         const url = await pet.eval<string>("location.href");
         await audit(`snapshot ${entries.length} elements at ${url}`);
       }, { readOnly: true });
+      return 0;
+    }
+
+    case "visible": {
+      await withSession(async (pet) => {
+        const entries = await pet.visible();
+        if (!entries.length) {
+          console.log("(no interactive elements in current viewport)");
+        } else {
+          const roleW = Math.min(12, Math.max(4, ...entries.map((e: any) => e.role.length)));
+          for (const e of entries) {
+            const num = `[${(e as any).idx}]`.padStart(5);
+            const role = pad((e as any).role, roleW);
+            const name = (e as any).name || "(no name)";
+            console.log(`${num} ${role}  ${name}`);
+          }
+        }
+        await audit(`visible ${entries.length} in viewport`);
+      }, { readOnly: true });
+      return 0;
+    }
+
+    case "show": {
+      const target = pos.join(" ");
+      if (!target) throw new Error("pet show: missing target (text substring or CSS selector)");
+      await withSession(async (pet) => {
+        const r = await pet.show(target);
+        if (!r) {
+          console.log(`not found: ${target}`);
+          process.exit(2 as any);
+        }
+        console.log(`scrolled into view: <${r.tag}> "${r.text.slice(0, 80)}${r.text.length > 80 ? "..." : ""}"`);
+        console.log(`  at x=${r.rect.x} y=${r.rect.y} w=${r.rect.w} h=${r.rect.h}`);
+        await audit(`show "${target.slice(0, 60)}" → <${r.tag}> at (${r.rect.x},${r.rect.y})`);
+      });
       return 0;
     }
 
