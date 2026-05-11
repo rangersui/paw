@@ -479,19 +479,38 @@ export class Paw {
   }
 
   async waitIdle(stableMs = 500, timeoutMs = 30000): Promise<void> {
-    const start = Date.now();
-    let stableSince = 0;
-    while (Date.now() - start < timeoutMs) {
-      const n = await this.inflight();
-      if (n === 0) {
-        if (!stableSince) stableSince = Date.now();
-        if (Date.now() - stableSince >= stableMs) return;
-      } else {
-        stableSince = 0;
-      }
-      await new Promise((r) => setTimeout(r, 100));
+    // Show a live-updating spinner pill next to the cursor so the human
+    // sees "⏳ 3 inflight" instead of a hanging terminal. Page-side
+    // self-polls window.__paw_inflight every 200ms; we just install +
+    // tear down.
+    if (!this.silent) {
+      await this.client.send("Runtime.evaluate", {
+        expression: `window.__paw && window.__paw.waitIdleSpinner(${timeoutMs})`,
+      });
     }
-    throw new Error(`paw: wait-idle timeout (${timeoutMs}ms)`);
+    try {
+      const start = Date.now();
+      let stableSince = 0;
+      while (Date.now() - start < timeoutMs) {
+        const n = await this.inflight();
+        if (n === 0) {
+          if (!stableSince) stableSince = Date.now();
+          if (Date.now() - stableSince >= stableMs) return;
+        } else {
+          stableSince = 0;
+        }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      throw new Error(`paw: wait-idle timeout (${timeoutMs}ms)`);
+    } finally {
+      if (!this.silent) {
+        try {
+          await this.client.send("Runtime.evaluate", {
+            expression: `window.__paw && window.__paw.waitIdleSpinnerDone()`,
+          });
+        } catch {}
+      }
+    }
   }
 
   async close(): Promise<void> {

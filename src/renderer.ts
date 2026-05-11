@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__pawArrived";
-const SCRIPT_VERSION = 3;
+const SCRIPT_VERSION = 4;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -512,7 +512,40 @@ const PAGE_SCRIPT = `
     window.__paw_hl_el = null;
     window.__paw_hl_prev = null;
   }
-  // snapshot overlay: paint the [N] indices directly on the elements they
+  // wait-idle spinner: live-update pill next to the cursor showing the
+  // current __paw_inflight count. Replaces "10 seconds of nothing" with
+  // "10 seconds of 'waiting for 3 requests'". Self-polls from page side
+  // every 200ms to avoid one CDP round-trip per tick.
+  function waitIdleSpinner(maxMs) {
+    waitIdleSpinnerDone();
+    maxMs = maxMs || 30000;
+    const sp = document.createElement('div');
+    const p = window.__paw_pos || { x: 0, y: 0 };
+    const sz = lastSize || 32;
+    let left = p.x + sz + 4;
+    let top = Math.max(2, p.y + sz - 4);
+    if (left + 160 > (window.innerWidth || 1024)) left = Math.max(2, p.x - 164);
+    sp.id = '__paw_idle_spinner__';
+    sp.style.cssText =
+      'position:fixed;left:' + left + 'px;top:' + top + 'px;' +
+      'background:rgba(30,41,59,0.92);color:#fbbf24;padding:4px 10px;border-radius:6px;' +
+      'font:bold 12px/1.3 system-ui,sans-serif;pointer-events:none;' +
+      'z-index:2147483646;box-shadow:0 1px 3px rgba(0,0,0,0.3);';
+    sp.textContent = '⏳ waiting...';
+    document.body.appendChild(sp);
+    window.__paw_idle_spinner = sp;
+    const start = Date.now();
+    window.__paw_idle_int = setInterval(function () {
+      if (Date.now() - start > maxMs) { waitIdleSpinnerDone(); return; }
+      const n = window.__paw_inflight | 0;
+      sp.textContent = n === 0 ? '∅ idle' : '⏳ ' + n + ' inflight';
+    }, 200);
+  }
+  function waitIdleSpinnerDone() {
+    if (window.__paw_idle_int) { clearInterval(window.__paw_idle_int); window.__paw_idle_int = null; }
+    if (window.__paw_idle_spinner) { try { window.__paw_idle_spinner.remove(); } catch (e) {} window.__paw_idle_spinner = null; }
+  }
+
   // refer to, briefly. Bridges AI's terminal worldview (numbered list)
   // and the human's browser worldview (rendered DOM). Only paints viewport-
   // visible elements — off-screen entries stay in the list but don't get
@@ -594,7 +627,7 @@ const PAGE_SCRIPT = `
     }
     r.el.addEventListener('animationend', done);
   }
-  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast, snapshotOverlay: snapshotOverlay };
+  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast, snapshotOverlay: snapshotOverlay, waitIdleSpinner: waitIdleSpinner, waitIdleSpinnerDone: waitIdleSpinnerDone };
 })();
 `;
 
