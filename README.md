@@ -20,7 +20,7 @@ paw  = Physical Agent Worker   (2026, the AI's body in the browser)
 CDP 是基建——谁都能做。paw 的三个差异化是：
 
 1. **可见光标 / 角色** — trust through visibility. 人类肉眼能看见 AI 在干什么。
-2. **审计日志** — 每个动作 PUT 到 elastik + 本地 `.paw.log`. Tee 给 reviewer agent 实时审查。
+2. **审计日志** — 每个动作 PUT 到 elastik + 本地 `.pawprint`. Tee 给 reviewer agent 实时审查。
 3. **游戏化** — 物理引擎 + 局部感知 + WASD 操控（roadmap v0.5-v0.6）。
 
 ghost-cursor 优化"骗网站像人"；paw 优化"让人看清 AI 干了啥"。目标不同，节奏不同。

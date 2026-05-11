@@ -215,11 +215,11 @@ silent = --silent or --renderer none → real CDP fires, no cursor/highlight
          --renderer cursor (default). paw|highlight reserved for v0.3+
 output = plain text. no JSON envelopes anywhere.
 state  = ~/.paw (KEY=VALUE, shell-sourceable)
-audit  = ~/.paw.log (every action, ISO ts + line, append-only, mode 0600)
-         PAW_ELASTIK=http://host:port  also PUT each action to /home/log/paw/<iso>
+audit  = ~/.pawprint (every action, ISO ts + line, append-only, mode 0600)
+         PAW_ELASTIK=http://host:port  also PUT each action to /home/pawprint/<iso>
          PAW_ELASTIK_TOKEN=... (or ELASTIK_WRITE_TOKEN=...) for write auth
          PAW_NO_AUDIT=1                disable both local and remote audit
-         consumer side: \`curl PAW_ELASTIK/listen/home/log/paw/*\` for SSE stream`;
+         consumer side: \`curl PAW_ELASTIK/listen/home/pawprint/*\` for SSE stream`;
 
 interface Flags {
   pos: string[];
