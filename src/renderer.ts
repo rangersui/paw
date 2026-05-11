@@ -6,7 +6,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__petArrived";
-const SCRIPT_VERSION = 9;
+const SCRIPT_VERSION = 10;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -18,7 +18,13 @@ const PAGE_SCRIPT = `
   let restTimer = null;
   let lastSrc = '', lastSize = 32;
   function clearRest() { if (restTimer) { clearTimeout(restTimer); restTimer = null; } }
-  function scheduleRest() { clearRest(); restTimer = setTimeout(rest, ${IDLE_MS}); }
+  function scheduleRest() {
+    clearRest();
+    if (window.__pet_no_rest) return;
+    restTimer = setTimeout(rest, ${IDLE_MS});
+  }
+  function stay() { window.__pet_no_rest = true; clearRest(); }
+  function unstay() { window.__pet_no_rest = false; scheduleRest(); }
   function corner() {
     return { x: (window.innerWidth || 1024) - ${CORNER_PAD}, y: ${CORNER_PAD} };
   }
@@ -308,9 +314,11 @@ const PAGE_SCRIPT = `
     });
     window.__pet_snapshot = out;
     window.__pet_snapshot_els = els;
+    scheduleRest();
     return out;
   }
   function nearby(radius, limit) {
+    scheduleRest();
     if (!window.__pet_snapshot) snapshot();
     const cur = window.__pet_pos || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
     const R = radius || 200;
@@ -398,7 +406,7 @@ const PAGE_SCRIPT = `
     }
     r.el.addEventListener('animationend', done);
   }
-  window.__pet = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, rest: rest, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale };
+  window.__pet = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale };
 })();
 `;
 

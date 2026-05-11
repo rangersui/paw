@@ -186,6 +186,8 @@ const HELP = `pet — visualized CDP client. AI-driven, curl-shaped, depth-1.
   pet box <sel>                         bounding rect
 
   pet batch [@file|-]                   run multiple verbs in ONE CDP session (stdin or file)
+  pet stay                              pin cursor in place (no idle rest)
+  pet unstay                            re-enable 5s idle rest
   pet auto                              (info) auto is the default
   pet play                              interactive WASD (v0.6, not yet)
   pet help [verb]
@@ -559,6 +561,24 @@ async function main(): Promise<number> {
     case "auto": {
       console.log("pet: auto mode is already the default. every verb runs autonomously without prompting.");
       console.log("     use `pet play` for interactive WASD control (v0.6 — not yet implemented).");
+      return 0;
+    }
+
+    case "stay": {
+      await withSession(async (pet) => {
+        await pet.eval("window.__pet && window.__pet.stay()");
+      });
+      console.log("stay: cursor will not rest. run `pet unstay` to re-enable.");
+      await audit("stay");
+      return 0;
+    }
+
+    case "unstay": {
+      await withSession(async (pet) => {
+        await pet.eval("window.__pet && window.__pet.unstay()");
+      });
+      console.log("unstay: cursor will rest after 5s idle.");
+      await audit("unstay");
       return 0;
     }
 
