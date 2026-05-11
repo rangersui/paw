@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__petArrived";
-const SCRIPT_VERSION = 12;
+const SCRIPT_VERSION = 13;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -32,6 +32,12 @@ const PAGE_SCRIPT = `
   function unstay() { window.__pet_no_rest = false; scheduleRest(); }
   function corner() {
     return { x: (window.innerWidth || 1024) - ${CORNER_PAD}, y: ${CORNER_PAD} };
+  }
+  function clampPos(x, y) {
+    const s = lastSize || 32;
+    const vw = window.innerWidth || 1024;
+    const vh = window.innerHeight || 768;
+    return { x: Math.max(0, Math.min(vw - s, x)), y: Math.max(0, Math.min(vh - s, y)) };
   }
   function bp(a, b) {
     const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
@@ -74,9 +80,13 @@ const PAGE_SCRIPT = `
     const wasResting = window.__pet_resting === true;
     window.__pet_resting = false;
     const r = ensure(src, size);
+    // Clamp every waypoint to viewport so the cursor can't leave the screen.
+    // If the caller passed an off-screen target, the cursor slides along the
+    // edge instead of vanishing into the void.
+    const clamped = path.map(function (p) { return clampPos(p.x, p.y); });
     const name = '__pet_move_' + token;
-    const frames = path.map(function (p, i) {
-      const t = i / (path.length - 1);
+    const frames = clamped.map(function (p, i) {
+      const t = i / (clamped.length - 1);
       const pct = (t * 100).toFixed(2);
       const sc = wasResting ? (0.5 + 0.5 * Math.min(1, t * 2)) : 1;
       return pct + '% { transform: translate(' + p.x + 'px,' + p.y + 'px) scale(' + sc + '); }';
@@ -87,7 +97,7 @@ const PAGE_SCRIPT = `
     r.el.style.animation = name + ' ' + duration + 'ms cubic-bezier(.4,0,.2,1) forwards';
     function done() {
       r.el.removeEventListener('animationend', done);
-      const last = path[path.length - 1];
+      const last = clamped[clamped.length - 1];
       r.el.style.animation = 'none';
       r.el.style.transform = 'translate(' + last.x + 'px,' + last.y + 'px) scale(1)';
       window.__pet_pos = { x: last.x, y: last.y };
@@ -177,11 +187,10 @@ const PAGE_SCRIPT = `
     const startMouse = { x: e.clientX, y: e.clientY };
     const startCursor = window.__pet_pos || { x: 0, y: 0 };
     function onMove(ev) {
-      const nx = startCursor.x + ev.clientX - startMouse.x;
-      const ny = startCursor.y + ev.clientY - startMouse.y;
+      const c = clampPos(startCursor.x + ev.clientX - startMouse.x, startCursor.y + ev.clientY - startMouse.y);
       el.style.animation = 'none';
-      el.style.transform = 'translate(' + nx + 'px,' + ny + 'px) scale(1)';
-      window.__pet_pos = { x: nx, y: ny };
+      el.style.transform = 'translate(' + c.x + 'px,' + c.y + 'px) scale(1)';
+      window.__pet_pos = c;
       window.__pet_resting = false;
     }
     function onUp() {
