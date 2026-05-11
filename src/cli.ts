@@ -669,18 +669,28 @@ async function main(): Promise<number> {
       if (!pos.length) throw new Error("paw eval: missing expression (use `@file.js` or `-` for stdin)");
       const expr = (pos[0] === "-" || pos[0].startsWith("@")) ? readSource(pos[0]) : pos.join(" ");
       const why = parseWhy(flags);
+      // Mutation heuristic — keep simple, NOT a real parser. Catches the
+      // common write shapes: assignment to a property, .click() / .remove()
+      // / .innerHTML / .outerHTML, and fetch(...). False positives (e.g.
+      // reading innerHTML) are tolerable — the worst case is the wrong icon
+      // appears, not a wrong action.
+      const isMutation = /[^=!<>]=[^=]|\.click\s*\(|\.remove\s*\(|\.innerHTML|\.outerHTML|fetch\s*\(/.test(expr);
+      const previewTxt = expr.replace(/\s+/g, " ").trim();
+      const preview40 = previewTxt.length > 40 ? previewTxt.slice(0, 37) + "..." : previewTxt;
+      const autoToast = `${isMutation ? "✏️" : "👁"} ${preview40}`;
       // eval is the god-mode escape hatch. Even during human takeover the
       // human needs to be able to inspect/reset state via eval — otherwise
       // a stuck __paw_human_grabbing flag self-deadlocks.
       const v = await withSession(async (paw) => {
-        if (why) await paw.toast(why);
+        await paw.toast(why || autoToast);
         return paw.eval(expr);
       }, { readOnly: true });
       if (v === undefined || v === null) console.log(String(v));
       else if (typeof v === "object") console.log(require("util").inspect(v, { depth: 4, colors: false, breakLength: 100 }));
       else console.log(String(v));
-      const preview = expr.replace(/\s+/g, " ").trim();
-      await audit(withWhy(`eval ${preview.length > 120 ? preview.slice(0, 117) + "..." : preview} (${expr.length} chars)`, why));
+      const previewLog = previewTxt.length > 120 ? previewTxt.slice(0, 117) + "..." : previewTxt;
+      const tag = isMutation ? "[write]" : "[read]";
+      await audit(withWhy(`eval ${tag} ${previewLog} (${expr.length} chars)`, why));
       return 0;
     }
 
