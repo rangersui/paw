@@ -411,6 +411,18 @@ export class Paw {
     if (readMs > 0) await sleep(readMs);
   }
 
+  /**
+   * Paint the [N] indices directly on the elements they refer to for
+   * `durMs` milliseconds. Bridges AI's terminal worldview to the human's
+   * browser worldview — they share coordinate space.
+   */
+  async snapshotOverlay(durMs = 1500): Promise<void> {
+    if (this.silent) return;
+    await this.client.send("Runtime.evaluate", {
+      expression: `window.__paw && window.__paw.snapshotOverlay(${durMs})`,
+    });
+  }
+
   /** True while the human is Alt+dragging the cursor in the browser. */
   async humanGrabbing(): Promise<boolean> {
     return await this.eval<boolean>("!!window.__paw_human_grabbing");

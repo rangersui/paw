@@ -475,9 +475,14 @@ async function main(): Promise<number> {
     }
 
     case "snapshot": {
+      const overlayMs = flags.overlay ? parseInt(String(flags.overlay), 10) : 1500;
       await withSession(async (paw) => {
         const entries = await paw.snapshot();
         console.log(fmtSnapshot(entries));
+        // Paint indices on the actual elements so the human can see what
+        // the [N] numbers refer to without leaving the browser tab. Fire-
+        // and-forget; overlay fades on its own page-side timer.
+        if (overlayMs > 0) await paw.snapshotOverlay(overlayMs);
         const url = await paw.eval<string>("location.href");
         await audit(`snapshot ${entries.length} elements at ${url}`);
       }, { readOnly: true });

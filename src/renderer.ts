@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__pawArrived";
-const SCRIPT_VERSION = 2;
+const SCRIPT_VERSION = 3;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -512,6 +512,45 @@ const PAGE_SCRIPT = `
     window.__paw_hl_el = null;
     window.__paw_hl_prev = null;
   }
+  // snapshot overlay: paint the [N] indices directly on the elements they
+  // refer to, briefly. Bridges AI's terminal worldview (numbered list)
+  // and the human's browser worldview (rendered DOM). Only paints viewport-
+  // visible elements — off-screen entries stay in the list but don't get
+  // a bubble (would scroll the page or render off-canvas).
+  function snapshotOverlay(durMs) {
+    durMs = durMs || 600;
+    const existing = document.querySelectorAll('.__paw_idx__');
+    for (let i = 0; i < existing.length; i++) existing[i].remove();
+    const els = window.__paw_snapshot_els || [];
+    const vw = window.innerWidth, vh = window.innerHeight;
+    for (let i = 1; i < els.length; i++) {
+      const el = els[i];
+      if (!el || !el.isConnected) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) continue;
+      if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) continue;
+      const tag = document.createElement('div');
+      tag.className = '__paw_idx__';
+      tag.style.cssText =
+        'position:fixed;left:' + Math.max(0, r.left) + 'px;top:' + Math.max(0, r.top - 16) + 'px;' +
+        'background:#facc15;color:#000;padding:1px 6px;border-radius:8px;' +
+        'border:1px solid #000;' +
+        'font:bold 11px/1.2 system-ui,sans-serif;pointer-events:none;' +
+        'z-index:2147483646;opacity:1;transition:opacity 350ms ease-out;' +
+        'box-shadow:0 1px 2px rgba(0,0,0,0.25);';
+      tag.textContent = String(i);
+      document.body.appendChild(tag);
+    }
+    setTimeout(function () {
+      const all = document.querySelectorAll('.__paw_idx__');
+      for (let i = 0; i < all.length; i++) all[i].style.opacity = '0';
+    }, durMs);
+    setTimeout(function () {
+      const all = document.querySelectorAll('.__paw_idx__');
+      for (let i = 0; i < all.length; i++) try { all[i].remove(); } catch (e) {}
+    }, durMs + 400);
+  }
+
   // intent toast: 1.5s speech-bubble next to the cursor.
   // surfaces --why intent, paw say strings, and the eval read/write icon.
   // lifetime is page-side via setTimeout so CDP can disconnect right after
@@ -555,7 +594,7 @@ const PAGE_SCRIPT = `
     }
     r.el.addEventListener('animationend', done);
   }
-  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast };
+  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast, snapshotOverlay: snapshotOverlay };
 })();
 `;
 
