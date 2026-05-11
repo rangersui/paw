@@ -780,6 +780,15 @@ export class CursorRenderer implements Renderer {
     await this.client.send("Runtime.addBinding", { name: BINDING });
     await this.client.send("Page.addScriptToEvaluateOnNewDocument", { source: PAGE_SCRIPT });
     await this.client.send("Runtime.evaluate", { expression: PAGE_SCRIPT });
+    // Force the cursor element to materialize immediately. Page-side ensure()
+    // used to be lazy — only called from animate()/flash()/pressScale(), so a
+    // fresh session that never did a hover/click would have NO visible cursor
+    // until the first action. The whole "trust through visibility" thesis
+    // collapses if the body isn't on screen until AI does something. Render
+    // it on install, at last-known position (defaults to 0,0).
+    await this.client.send("Runtime.evaluate", {
+      expression: `window.__paw && window.__paw.ensure(${JSON.stringify(this.opts.cursor)}, ${this.opts.size})`,
+    });
     const res = await this.client.send<{ result: { value: Pt | null } }>("Runtime.evaluate", {
       expression: "window.__paw_pos || null",
       returnByValue: true,
