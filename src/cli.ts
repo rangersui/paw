@@ -231,6 +231,7 @@ const HELP = `paw — visualized CDP client. AI-driven, curl-shaped, depth-1.
 
   paw batch [@file|-]                   run multiple verbs in ONE CDP session (stdin or file)
   paw say <text|@file|->                pop a 1.5s speech-bubble next to the cursor (no action)
+  paw edit [on|off]                     toggle document.designMode — whole page becomes editable
   paw stay                              pin cursor in place (no idle rest)
   paw unstay                            re-enable 5s idle rest
   paw auto                              (info) auto is the default
@@ -854,6 +855,32 @@ async function main(): Promise<number> {
       }, { readOnly: true });
       const preview = text.length > 100 ? text.slice(0, 97) + "..." : text;
       await audit(`say "${preview.replace(/"/g, '\\"')}"`);
+      return 0;
+    }
+
+    case "edit": {
+      // Toggle document.designMode — whole-page WYSIWYG editor. Three uses:
+      //   1. paw + elastik live REPL: human edits page in browser, AI snaps
+      //      the new innerHTML and PUTs to elastik. The URL is the artifact.
+      //   2. AI scratchpad — turn any page into a notepad without finding
+      //      an input field.
+      //   3. Quick text rewrite for screenshots / demos / copy-edit.
+      // Reads current state if no arg passed.
+      const mode = pos[0];
+      if (mode === undefined) {
+        const state = await withSession(async (paw) => paw.eval<string>("document.designMode"), { readOnly: true });
+        console.log(`edit-mode: ${state}`);
+        return 0;
+      }
+      if (mode !== "on" && mode !== "off") {
+        throw new Error("paw edit: arg must be `on` or `off` (or omit to read state)");
+      }
+      const why = parseWhy(flags);
+      await withSession(async (paw) => {
+        await paw.toast(why || `✏️ edit-mode ${mode}`);
+        await paw.eval(`document.designMode = ${JSON.stringify(mode)}`);
+      });
+      await audit(withWhy(`edit-mode ${mode}`, why));
       return 0;
     }
 
