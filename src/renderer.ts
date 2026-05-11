@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__pawArrived";
-const SCRIPT_VERSION = 6;
+const SCRIPT_VERSION = 7;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -338,7 +338,7 @@ const PAGE_SCRIPT = `
     }
     return out;
   }
-  function snapshot() {
+  function snapshot(noRest) {
     const sel = 'a[href], button, input:not([type=hidden]), textarea, select, summary, [role], [tabindex]:not([tabindex="-1"]), [onclick], [contenteditable="true"]';
     const seen = new Set();
     const out = [null];
@@ -427,8 +427,44 @@ const PAGE_SCRIPT = `
     });
     window.__paw_snapshot = out;
     window.__paw_snapshot_els = els;
-    scheduleRest();
+    window.__paw_snapshot_v = (window.__paw_snapshot_v || 0) + 1;
+    if (!noRest) scheduleRest();
     return out;
+  }
+  // Auto-snapshot watcher: MutationObserver re-runs snapshot on DOM changes
+  // (debounced 250ms) so nearby()/playStep always see live elements. Without
+  // this, expanding an accordion leaves its children invisible to paw play
+  // until a manual paw snapshot runs.
+  // Filtered attribute set keeps cost down on hot-mutating pages — only
+  // changes that could affect interactivity rebuild the snapshot.
+  function installSnapshotWatcher() {
+    if (window.__paw_mo_installed) return;
+    window.__paw_mo_installed = true;
+    let timer = null;
+    const debounceMs = window.__paw_mo_debounce_ms || 250;
+    const reschedule = function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function () {
+        timer = null;
+        try { snapshot(true); } catch (e) {}
+      }, debounceMs);
+    };
+    const start = function () {
+      const mo = new MutationObserver(reschedule);
+      try {
+        mo.observe(document.body, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ['style', 'class', 'hidden', 'disabled', 'aria-hidden', 'role', 'tabindex'],
+        });
+        window.__paw_mo = mo;
+      } catch (e) {}
+      // Seed initial snapshot so playStep/nearby work before any explicit call.
+      try { snapshot(true); } catch (e) {}
+    };
+    if (document.body) start();
+    else document.addEventListener('DOMContentLoaded', start, { once: true });
   }
   function visible() {
     if (!window.__paw_snapshot) snapshot();
@@ -704,7 +740,8 @@ const PAGE_SCRIPT = `
     }
     r.el.addEventListener('animationend', done);
   }
-  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast, snapshotOverlay: snapshotOverlay, waitIdleSpinner: waitIdleSpinner, waitIdleSpinnerDone: waitIdleSpinnerDone, playStep: playStep, playStepDone: playStepDone };
+  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast, snapshotOverlay: snapshotOverlay, waitIdleSpinner: waitIdleSpinner, waitIdleSpinnerDone: waitIdleSpinnerDone, playStep: playStep, playStepDone: playStepDone, installSnapshotWatcher: installSnapshotWatcher };
+  installSnapshotWatcher();
 })();
 `;
 
