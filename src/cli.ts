@@ -201,8 +201,9 @@ const HELP = `paw — visualized CDP client. AI-driven, curl-shaped, depth-1.
   paw show <text|sel>                   scrollIntoView a text substring or CSS selector
   paw nearby [--radius N] [--limit N]   only elements within radius of cursor (saves tokens)
   paw dismiss-cookies [--reject|--list] kill OneTrust/Cookiebot/Didomi/... banners
-  paw log [--since Ns] [--type T] [--status '>=N']   dump page log (console+net+error)
+  paw log [--since Ns] [--type T] [--status '>=N'] [--bodies] [--body-limit N]   dump page log
   paw log clear                         empty buffer
+                                        --bodies adds req:/res: previews for net entries (schema-learning)
   paw wait-idle [stableMs=500] [--timeout N=30000]   block until network quiet
 
   paw click <n|sel> [--speed fast|normal|slow] [--right|--middle]  cursor walks → highlight → real click
@@ -357,6 +358,8 @@ async function main(): Promise<number> {
       const since = flags.since ? parseSince(String(flags.since)) : 0;
       const type = flags.type ? String(flags.type) : "";
       const statusFilter = flags.status ? parseStatusFilter(String(flags.status)) : null;
+      const showBodies = flags.bodies === true || flags.bodies === "true";
+      const bodyLimit = flags["body-limit"] ? parseInt(String(flags["body-limit"]), 10) : 400;
       const entries = await withSession((paw) => paw.getLog(), { readOnly: true });
       const now = Date.now();
       const filtered = entries.filter((e) => {
@@ -369,11 +372,20 @@ async function main(): Promise<number> {
         console.log("(empty)");
         return 0;
       }
+      const oneLine = (s: string, n: number) => {
+        const flat = s.replace(/\s+/g, " ").trim();
+        return flat.length > n ? flat.slice(0, n) + ` ... (+${flat.length - n} chars)` : flat;
+      };
       for (const e of filtered) {
         const ago = fmtAgo(now - e.t);
         if (e.kind === "console") console.log(`${ago.padStart(7)}  console.${e.level}  ${e.msg}`);
-        else if (e.kind === "net") console.log(`${ago.padStart(7)}  ${(e.method || "GET").padEnd(4)} ${String(e.status).padEnd(3)} ${String(e.ms ?? "").padStart(4)}ms  ${e.url}`);
-        else if (e.kind === "error") console.log(`${ago.padStart(7)}  error  ${e.msg}${e.file ? `  (${e.file}:${e.line})` : ""}`);
+        else if (e.kind === "net") {
+          console.log(`${ago.padStart(7)}  ${(e.method || "GET").padEnd(4)} ${String(e.status).padEnd(3)} ${String(e.ms ?? "").padStart(4)}ms  ${e.url}`);
+          if (showBodies) {
+            if (e.reqBody) console.log(`           req:  ${oneLine(e.reqBody, bodyLimit)}`);
+            if (e.body) console.log(`           res:  ${oneLine(e.body, bodyLimit)}`);
+          }
+        } else if (e.kind === "error") console.log(`${ago.padStart(7)}  error  ${e.msg}${e.file ? `  (${e.file}:${e.line})` : ""}`);
       }
       return 0;
     }

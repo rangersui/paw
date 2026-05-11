@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__pawArrived";
-const SCRIPT_VERSION = 11;
+const SCRIPT_VERSION = 12;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -254,6 +254,19 @@ function makePageScript(cursor: string, size: number): string {
         return orig.apply(this, arguments);
       };
     });
+    // Body capture cap — default 1000 chars per req/res. Set
+    // window.__paw_body_max = 0 to disable entirely, or higher to learn
+    // bigger schemas. We push the log record IMMEDIATELY on fetch settle
+    // and mutate to add body asynchronously — preserves temporal order
+    // if other entries land between body chunks arriving.
+    function captureReqBody(init, max) {
+      if (!init || !init.body || max <= 0) return undefined;
+      try {
+        if (typeof init.body === 'string') return init.body.slice(0, max);
+        if (init.body instanceof URLSearchParams) return init.body.toString().slice(0, max);
+        return undefined; // FormData / Blob / ReadableStream — skip
+      } catch (e) { return undefined; }
+    }
     const oFetch = window.fetch;
     if (oFetch) {
       window.fetch = function (input, init) {
@@ -261,12 +274,29 @@ function makePageScript(cursor: string, size: number): string {
         const method = (init && init.method) || (typeof input !== 'string' && input && input.method) || 'GET';
         const t0 = Date.now();
         window.__paw_inflight++;
+        const max = window.__paw_body_max == null ? 1000 : window.__paw_body_max;
+        const reqBody = captureReqBody(init, max);
         return oFetch.apply(this, arguments).then(function (res) {
-          push({ kind: 'net', method: method, url: url, status: res.status, ms: Date.now() - t0 });
+          const rec = { kind: 'net', method: method, url: url, status: res.status, ms: Date.now() - t0 };
+          if (reqBody !== undefined) rec.reqBody = reqBody;
+          push(rec);
+          // Async body capture — skip streaming (SSE) + opaque (no-cors) responses
+          if (max > 0 && res.type !== 'opaque') {
+            const ct = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
+            if (ct.indexOf('event-stream') < 0) {
+              try {
+                res.clone().text().then(function (body) {
+                  rec.body = body.slice(0, max);
+                }).catch(function () {});
+              } catch (e) {}
+            }
+          }
           window.__paw_inflight--;
           return res;
         }, function (err) {
-          push({ kind: 'net', method: method, url: url, status: 0, err: String(err), ms: Date.now() - t0 });
+          const rec = { kind: 'net', method: method, url: url, status: 0, err: String(err), ms: Date.now() - t0 };
+          if (reqBody !== undefined) rec.reqBody = reqBody;
+          push(rec);
           window.__paw_inflight--;
           throw err;
         });
@@ -275,12 +305,26 @@ function makePageScript(cursor: string, size: number): string {
     const XP = XMLHttpRequest.prototype;
     const oOpen = XP.open, oSend = XP.send;
     XP.open = function (m, u) { this.__paw_m = m; this.__paw_u = u; return oOpen.apply(this, arguments); };
-    XP.send = function () {
+    XP.send = function (body) {
       const t0 = Date.now();
       const self = this;
+      const max = window.__paw_body_max == null ? 1000 : window.__paw_body_max;
+      if (max > 0 && typeof body === 'string') self.__paw_req = body.slice(0, max);
+      else if (max > 0 && body instanceof URLSearchParams) self.__paw_req = body.toString().slice(0, max);
       window.__paw_inflight++;
       this.addEventListener('loadend', function () {
-        push({ kind: 'net', method: self.__paw_m || 'GET', url: self.__paw_u || '', status: self.status, ms: Date.now() - t0 });
+        const rec = { kind: 'net', method: self.__paw_m || 'GET', url: self.__paw_u || '', status: self.status, ms: Date.now() - t0 };
+        if (self.__paw_req !== undefined) rec.reqBody = self.__paw_req;
+        if (max > 0) {
+          try {
+            if (self.responseType === '' || self.responseType === 'text') {
+              rec.body = String(self.responseText || '').slice(0, max);
+            } else if (self.responseType === 'json') {
+              try { rec.body = JSON.stringify(self.response || null).slice(0, max); } catch (e) {}
+            }
+          } catch (e) {}
+        }
+        push(rec);
         window.__paw_inflight--;
       });
       return oSend.apply(this, arguments);

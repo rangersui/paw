@@ -73,6 +73,10 @@ export interface LogEntry {
   err?: string;
   file?: string;
   line?: number;
+  /** Captured request body (POST/PUT/PATCH). Capped at window.__paw_body_max (default 1000). */
+  reqBody?: string;
+  /** Captured response body. Capped at window.__paw_body_max. Skipped for opaque/SSE responses. */
+  body?: string;
 }
 
 export type MouseButton = "left" | "middle" | "right";
