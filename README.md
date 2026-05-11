@@ -13,6 +13,8 @@ curl = Client URL              (1996, HTTP's remote control)
 paw  = Physical Agent Worker   (2026, the AI's body in the browser)
 ```
 
+**Identity.** Product name is **PAW**. The CLI command you type is `paw`. The npm package is [`paw-browser`](https://www.npmjs.com/package/paw-browser) (the bare `paw` slot is an abandoned 2018 squatter). Source lives at [github.com/rangersui/paw](https://github.com/rangersui/paw).
+
 **Zero runtime dependencies.** Node 22+. `dependencies: {}` — literally empty. Native `WebSocket`, no `ws`, no Playwright, no Puppeteer, no MCP, no browser download.
 
 ## Why
@@ -20,10 +22,25 @@ paw  = Physical Agent Worker   (2026, the AI's body in the browser)
 CDP is infrastructure — anyone can wrap it. PAW's three differentiators:
 
 1. **Visible cursor / character** — trust through visibility. A human watching the screen can literally see what the AI is doing, action by action.
-2. **Audit log** — every action is appended to `~/.pawprint` locally AND (optionally) PUT to an elastik URL as a tee for a reviewer agent.
+2. **Audit log** — every action is appended to `~/.pawprint` locally AND (optionally) PUT to any HTTP byte server (we use [elastik](https://github.com/rangersui/Elastik) but anything that accepts `PUT` works) as a tee for a reviewer agent.
 3. **Human-in-the-loop shared control** — Alt+drag the cursor with your real mouse to redirect AI mid-task. AI commands automatically pause while you're holding the wheel; resume when you release.
 
 `ghost-cursor` optimizes for "fool the website into thinking it's human". PAW optimizes for "let the human see exactly what the AI just did." Different goals, different cadence — PAW is deliberately slow (~1.4s per click by default) so the human can follow.
+
+## From source
+
+If you cloned the repo instead of installing from npm:
+
+```bash
+git clone https://github.com/rangersui/paw.git
+cd paw
+npm install        # only @types/node + typescript (no runtime deps)
+npm run build      # tsc → dist/
+npm link           # puts `paw` in your global PATH
+paw help
+```
+
+`dist/` is git-ignored, so `npm run build` is required before the bin/ wrapper can find `dist/cli.js`. `npm unlink -g paw-browser` to disconnect.
 
 ## Quick start
 
@@ -75,7 +92,7 @@ paw close
 | verb | what |
 |---|---|
 | `paw click <n\|sel> [--right\|--middle]` | bezier walk → outline highlight → press-shrink → real CDP mouse event → release → unhighlight → pause |
-| `paw dblclick` / `paw rightclick` / `paw hover` | same envelope, different event |
+| `paw dblclick <n\|sel>` / `paw rightclick <n\|sel>` / `paw hover <n\|sel>` | same envelope, different event |
 | `paw type <n\|sel> <text\|@file\|->` | click into the input + `Input.insertText` (text can come from a file or stdin) |
 | `paw keypress <key>` | `Enter`, `Tab`, `ArrowDown`, ... |
 | `paw drag <from> <to>` | press → bezier walk dispatching mouseMoved with button held → release |
@@ -162,7 +179,9 @@ Every state-changing verb is appended (sync, mode 0600) to `~/.pawprint`:
 
 When the human Alt+drags the cursor, the takeover is buffered page-side and flushed into the audit log with a `[HUMAN-TAKEOVER]` tag on the next `paw` command. Reviewer agents tell autopilot from manual control at a glance — like the cockpit voice recorder distinguishing pilot inputs from autopilot.
 
-If `PAW_ELASTIK=http://host:port` is set, every audit line is also PUT to `${PAW_ELASTIK}/home/pawprint/<iso-timestamp>` (fire-and-forget, max 500ms timeout). Any client can subscribe to `/listen/home/pawprint/*` for an SSE stream of every PAW action in real time:
+If `PAW_ELASTIK=http://host:port` is set, every audit line is also PUT to `${PAW_ELASTIK}/home/pawprint/<iso-timestamp>` (fire-and-forget, max 500ms timeout). The env var is named after [elastik](https://github.com/rangersui/Elastik) (which natively supports `/listen/*` SSE streams for live mirroring), but it works with any HTTP server that accepts authenticated `PUT`.
+
+If your byte server is elastik, you can stream PAW's actions live:
 
 ```bash
 curl -N http://localhost:3105/listen/home/pawprint/*
@@ -170,8 +189,8 @@ curl -N http://localhost:3105/listen/home/pawprint/*
 
 | env var | purpose |
 |---|---|
-| `PAW_ELASTIK` | elastik base URL |
-| `PAW_ELASTIK_TOKEN` or `ELASTIK_WRITE_TOKEN` | write auth |
+| `PAW_ELASTIK` | base URL of the HTTP server receiving the audit tee |
+| `PAW_ELASTIK_TOKEN` or `ELASTIK_WRITE_TOKEN` | write auth header |
 | `PAW_NO_AUDIT=1` | disable both local and remote audit |
 
 ## State file
@@ -202,18 +221,22 @@ interface Renderer {
 
 v1.0 ships one impl: `CursorRenderer` — a black-outlined SVG arrow injected via `Runtime.evaluate`, animated via CSS `@keyframes` built from a quadratic bezier path, with element-outline highlight and cursor scale-shrink on press. Future renderers (`pet` / `highlight` / `platform`) will drop in via the same interface without changing the CLI.
 
-## Live HTML REPL with elastik
+## Live HTML REPL
 
-The defining use case isn't automating other people's sites — it's authoring your own. PAW + elastik gives you a live HTML REPL where the URL IS the source of truth:
+The defining use case isn't automating other people's sites — it's authoring your own. PAW + any HTTP byte server that accepts `PUT` (we use [elastik](https://github.com/rangersui/Elastik) below) gives you a live HTML REPL where the URL IS the source of truth.
 
 ```bash
-# 1. seed a blank canvas at a URL
-curl -X PUT $ELASTIK/home/canvas.html \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: text/html" \
+# Pre-conditions in your shell:
+export REPL_URL=http://127.0.0.1:3105/home/canvas.html
+export REPL_TOKEN=...   # whatever your byte server uses for write auth
+
+# 1. seed a blank canvas at the URL
+curl -X PUT "$REPL_URL" \
+  -H "Authorization: Bearer $REPL_TOKEN" -H "Content-Type: text/html" \
   --data '<!doctype html><html><body></body></html>'
 
 # 2. point paw at it
-paw goto $ELASTIK/home/canvas.html
+paw goto "$REPL_URL"
 
 # 3. AI rewrites the entire DOM via paw eval (CSS + HTML + <script>)
 paw eval - <<'JS'
@@ -221,18 +244,21 @@ paw eval - <<'JS'
   document.body.innerHTML = '<h1>...</h1><button id="x">click</button><script>...</script>';
 JS
 
-# 4. PUT the live DOM back — URL becomes the new source of truth
-paw eval - <<'JS'
+# 4. PUT the live DOM back — URL becomes the new source of truth.
+# Note: unquoted heredoc (<<JS, no quotes) lets $REPL_URL / $REPL_TOKEN
+# expand. $ inside the JS body still needs no escape — just don't quote
+# the heredoc terminator. The `\$` lets the literal `$` reach the JS too.
+paw eval - <<JS
   const html = '<!doctype html>\n' + document.documentElement.outerHTML;
-  await fetch('/home/canvas.html', {
+  await fetch('$REPL_URL', {
     method: 'PUT',
-    headers: { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'text/html' },
+    headers: { 'Authorization': 'Bearer $REPL_TOKEN', 'Content-Type': 'text/html' },
     body: html,
   });
 JS
 ```
 
-After step 4, `curl $ELASTIK/home/canvas.html` returns the new page. Any browser opening that URL gets the AI-built interactive app, fully self-contained — because `documentElement.outerHTML` serializes `<script>` tags verbatim. Multiple tabs subscribed via `EventSource('/listen/home/canvas.html')` get every PUT pushed in real time with an etag for change detection.
+After step 4, `curl "$REPL_URL"` returns the new page. Any browser opening that URL gets the AI-built interactive app, fully self-contained — because `documentElement.outerHTML` serializes `<script>` tags verbatim. With elastik specifically, multiple tabs subscribed via `EventSource('/listen/home/canvas.html')` get every PUT pushed in real time with an etag for change detection — but the rest of the pattern works with any HTTP server that does `PUT`/`GET`.
 
 No build step. No deploy. No framework. No database. The HTML *is* the artifact, the URL *is* the publish target, the browser *is* the editor.
 

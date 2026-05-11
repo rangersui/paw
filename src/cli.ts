@@ -96,7 +96,7 @@ function parseSilent(flags: Record<string, string | boolean>): boolean {
   if (flags.silent) return true;
   if (flags.renderer === "none") return true;
   if (flags.renderer && flags.renderer !== "cursor" && flags.renderer !== "none") {
-    throw new Error(`paw: --renderer "${flags.renderer}" not yet implemented. v0.1 supports: cursor (default), none. PetRenderer planned v0.3, HighlightRenderer v0.4.`);
+    throw new Error(`paw: --renderer "${flags.renderer}" not yet implemented. v1.0 supports: cursor (default), none. PetRenderer planned v1.2, HighlightRenderer v1.3, PlatformRenderer v1.4.`);
   }
   return false;
 }
@@ -204,7 +204,7 @@ const HELP = `paw — visualized CDP client. AI-driven, curl-shaped, depth-1.
   paw stay                              pin cursor in place (no idle rest)
   paw unstay                            re-enable 5s idle rest
   paw auto                              (info) auto is the default
-  paw play                              interactive WASD (v0.6, not yet)
+  paw play                              interactive WASD (v1.5, not yet)
   paw help [verb]
 
 target = positive integer (snapshot/nearby index) or CSS selector
@@ -212,7 +212,7 @@ speed  = fast (~280ms) | normal (~1.4s, default) | slow (~3.5s, demo)
          each click does: bezier move → highlight → press-shrink → release → pause
          PAW_SPEED=fast for global default, --speed S to override per call
 silent = --silent or --renderer none → real CDP fires, no cursor/highlight
-         --renderer cursor (default). paw|highlight reserved for v0.3+
+         --renderer cursor (default). pet|highlight|platform reserved for v1.2+
 output = plain text. no JSON envelopes anywhere.
 state  = ~/.paw (KEY=VALUE, shell-sourceable)
 audit  = ~/.pawprint (every action, ISO ts + line, append-only, mode 0600)
@@ -658,7 +658,7 @@ async function main(): Promise<number> {
 
     case "auto": {
       console.log("paw: auto mode is already the default. every verb runs autonomously without prompting.");
-      console.log("     use `paw play` for interactive WASD control (v0.6 — not yet implemented).");
+      console.log("     use `paw play` for interactive WASD control (v1.5 — not yet implemented).");
       return 0;
     }
 
@@ -681,7 +681,7 @@ async function main(): Promise<number> {
     }
 
     case "play": {
-      console.error("paw play: interactive WASD game mode is on the v0.6 roadmap, not yet implemented.");
+      console.error("paw play: interactive WASD game mode is on the v1.5 roadmap, not yet implemented.");
       console.error("          for now, drive paw from any shell with paw click/type/etc.");
       return 78;
     }

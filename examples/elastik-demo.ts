@@ -151,7 +151,7 @@ async function main() {
   if (await probeCDP(CDP_PORT)) {
     console.log(`✓ reusing existing CDP on ${CDP_PORT}`);
   } else {
-    const userDataDir = mkdtempSync(join(tmpdir(), "paw-cursor-"));
+    const userDataDir = mkdtempSync(join(tmpdir(), "paw-"));
     console.log(`✓ launching ${BROWSER} on port ${CDP_PORT}`);
     const child = spawn(
       BROWSER,
@@ -193,7 +193,7 @@ async function main() {
   await sleep(500);
 
   console.log("→ type into #email");
-  await paw.type("#email", "hello paw-cursor");
+  await paw.type("#email", "hello paw");
   await sleep(500);
 
   console.log("→ scroll down");

@@ -1,8 +1,17 @@
 {
   "name": "paw-browser",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "PAW — Physical Agent Worker. AI's body on the web. `paw click 1` walks a visible cursor across the page on a bezier curve, then fires real CDP mouse events. Human can grab the wheel mid-task with Alt+drag. Zero runtime dependencies.",
   "license": "MIT",
+  "author": "Ranger Chen",
+  "homepage": "https://github.com/rangersui/paw#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rangersui/paw.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rangersui/paw/issues"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
