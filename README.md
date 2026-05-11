@@ -137,7 +137,7 @@ paw release
 | `paw batch [@file\|-]` | run many verbs in one CDP session (no per-command WS setup overhead) |
 | `paw stay` / `paw unstay` | pin the cursor in place (disable idle-rest) / re-enable |
 | `paw auto` | info: auto mode is the default; this just prints a note |
-| `paw play` | interactive WASD control — placeholder for v0.6 |
+| `paw play` | interactive WASD control — placeholder for v1.5 |
 
 ### Rules
 

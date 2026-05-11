@@ -535,7 +535,7 @@ export interface RendererOptions {
 /**
  * Renderer — the pluggable visualization layer.
  *
- * v0.1 ships one impl (CursorRenderer). The interface exists so v0.3+
+ * v1.0 ships one impl (CursorRenderer). The interface exists so v1.2+
  * (PetRenderer with sprite-sheet, PlatformRenderer with Shimeji-style
  * physics + DOM platform collision, etc.) can drop in without touching
  * wrapper.ts or cli.ts.
