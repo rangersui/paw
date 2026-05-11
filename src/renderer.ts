@@ -466,6 +466,10 @@ function makePageScript(cursor: string, size: number): string {
         });
         window.__paw_mo = mo;
       } catch (e) {}
+      // Scroll listener — MO doesn't fire on scroll, but cached x/y in
+      // __paw_snapshot are viewport-relative so scrolling invalidates them.
+      // capture: true catches inner-element scrolls too (not just window).
+      try { window.addEventListener('scroll', reschedule, { passive: true, capture: true }); } catch (e) {}
       // Seed initial snapshot so playStep/nearby work before any explicit call.
       try { snapshot(true); } catch (e) {}
     };

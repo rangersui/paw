@@ -902,11 +902,10 @@ async function main(): Promise<number> {
       await paw.snapshot();
 
       console.log(`paw play — step ${step}px, highlight radius ${radius}px`);
-      console.log(`  W/A/S/D    cardinals    Q/E/Z/C    diagonals`);
-      console.log(`  Space      click nearest (highlighted yellow)`);
-      console.log(`  F          toggle drag mode (sticky press; WASD drags)`);
-      console.log(`  R          refresh snapshot (if DOM changed mid-play)`);
-      console.log(`  Esc / ^C   quit`);
+      console.log(`  W/A/S/D    cursor cardinals          Q/E/Z/C    cursor diagonals`);
+      console.log(`  ↑↓←→       scroll page 100px         PgUp/PgDn  scroll 500px`);
+      console.log(`  Space      click nearest-highlighted F          toggle drag mode`);
+      console.log(`  R          refresh snapshot          Esc / ^C   quit`);
       await audit(`play started (step=${step}px radius=${radius}px)`);
 
       process.stdin.setRawMode(true);
@@ -943,8 +942,34 @@ async function main(): Promise<number> {
 
       const quit = new Promise<void>((resolve) => {
         const onData = async (key: string) => {
-          // Esc () or Ctrl-C ()
-          if (key === "" || key === "") {
+          // Scroll keys: Arrows and PageUp/PageDown.
+          // Multi-byte escape sequences come from raw stdin as a single chunk.
+          const scrolls: Record<string, ["up"|"down"|"left"|"right", number]> = {
+            "\u001b[A":  ["up",    100], "\u001b[B":  ["down",  100],
+            "\u001b[C":  ["right", 100], "\u001b[D":  ["left",  100],
+            "\u001b[5~": ["up",    500], "\u001b[6~": ["down",  500],
+          };
+          if (scrolls[key]) {
+            if (busy) return;
+            busy = true;
+            try {
+              const [dir, px] = scrolls[key];
+              await paw.scroll(dir, px);
+              // Cached x/y in __paw_snapshot are pre-scroll viewport coords; force
+              // refresh so the nearest-finder uses post-scroll positions. The MO
+              // scroll listener also fires but is debounced; this is tight-timing.
+              await paw.eval("window.__paw && window.__paw.snapshot(true)");
+              const r = await paw.playStep(0, 0, radius, dragMode ? 1 : 0);
+              renderStatus(r.nearest, { x: r.x, y: r.y });
+            } catch (e: any) {
+              process.stdout.write(`\n[scroll error: ${e.message ?? e}]\n`);
+            } finally {
+              busy = false;
+            }
+            return;
+          }
+          // Esc or Ctrl-C: quit (bare  only — arrow sequences handled above)
+          if (key === "\u001b" || key === "\u0003") {
             process.stdin.removeListener("data", onData);
             resolve();
             return;
