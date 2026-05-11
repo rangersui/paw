@@ -364,6 +364,31 @@ export class PetCursor {
     );
   }
 
+  /** True while the human is Alt+dragging the cursor in the browser. */
+  async humanGrabbing(): Promise<boolean> {
+    return await this.eval<boolean>("!!window.__pet_human_grabbing");
+  }
+
+  /**
+   * Wait until the human releases the cursor (Alt+drag ends).
+   * Mutating actions call this before dispatching so AI and human don't
+   * fight over the wheel.
+   */
+  async waitForUngrab(maxMs = 60000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < maxMs) {
+      if (!(await this.humanGrabbing())) return;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+
+  /** Drain and return any HUMAN-TAKEOVER entries that accumulated in the page-side buffer. */
+  async drainHumanLog(): Promise<{ ts: string; endTs: string; from: { x: number; y: number }; to: { x: number; y: number } }[]> {
+    return await this.eval<any[]>(
+      "(() => { const b = window.__pet_human_log || []; window.__pet_human_log = []; return b; })()",
+    );
+  }
+
   async dismissCookies(action: "accept" | "reject" | "list" = "accept"): Promise<{ matched: string | null; clicked: boolean; candidates: string[] }> {
     const res = await this.client.send<{ result: { value: { matched: string | null; clicked: boolean; candidates: string[] } } }>("Runtime.evaluate", {
       expression: `window.__pet && window.__pet.dismissCookies(${JSON.stringify(action)})`,

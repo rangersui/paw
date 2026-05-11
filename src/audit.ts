@@ -6,15 +6,17 @@ export const LOG_FILE = join(homedir(), ".pet-cursor.log");
 
 const ELASTIK_TIMEOUT_MS = 500;
 
+export type Origin = "AI" | "HUMAN-TAKEOVER";
+
 function truncate(s: string, n = 200): string {
   if (s.length <= n) return s;
   return s.slice(0, n - 3) + "...";
 }
 
-export async function audit(line: string): Promise<void> {
+export async function audit(line: string, origin: Origin = "AI", overrideTs?: string): Promise<void> {
   if (process.env.PET_NO_AUDIT) return;
-  const ts = new Date().toISOString();
-  const entry = `${ts} ${truncate(line, 500)}\n`;
+  const ts = overrideTs ?? new Date().toISOString();
+  const entry = `${ts} [${origin}] ${truncate(line, 500)}\n`;
 
   // local file — sync, guaranteed before process exit
   try {
@@ -43,7 +45,7 @@ export async function audit(line: string): Promise<void> {
     // token. /log/* (no prefix) gets a flat 404.
     const fetchP = fetch(`${elastik.replace(/\/$/, "")}/home/log/pet/${ts}`, {
       method: "PUT",
-      body: line,
+      body: `[${origin}] ${line}`,
       headers,
     }).catch(() => null);
     const timeoutP = new Promise((r) => setTimeout(r, ELASTIK_TIMEOUT_MS));

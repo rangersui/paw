@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__petArrived";
-const SCRIPT_VERSION = 13;
+const SCRIPT_VERSION = 14;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -182,10 +182,12 @@ const PAGE_SCRIPT = `
     e.preventDefault();
     e.stopPropagation();
     grabbing = true;
+    window.__pet_human_grabbing = true;  // signals AI to wait
     clearRest();
     setHighlightOn(true);
     const startMouse = { x: e.clientX, y: e.clientY };
     const startCursor = window.__pet_pos || { x: 0, y: 0 };
+    const startTs = new Date().toISOString();
     function onMove(ev) {
       const c = clampPos(startCursor.x + ev.clientX - startMouse.x, startCursor.y + ev.clientY - startMouse.y);
       el.style.animation = 'none';
@@ -197,7 +199,17 @@ const PAGE_SCRIPT = `
       window.removeEventListener('mousemove', onMove, true);
       window.removeEventListener('mouseup', onUp, true);
       grabbing = false;
+      window.__pet_human_grabbing = false;
       setHighlightOn(false);
+      // Buffer the takeover for the next pet command to flush into the audit log
+      const endPos = window.__pet_pos || { x: 0, y: 0 };
+      window.__pet_human_log = window.__pet_human_log || [];
+      window.__pet_human_log.push({
+        ts: startTs,
+        endTs: new Date().toISOString(),
+        from: { x: Math.round(startCursor.x), y: Math.round(startCursor.y) },
+        to: { x: Math.round(endPos.x), y: Math.round(endPos.y) },
+      });
       scheduleRest();
     }
     window.addEventListener('mousemove', onMove, true);

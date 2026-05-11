@@ -74,10 +74,17 @@ async function runBatchVerb(pet: PetCursor, verb: string, args: string[]): Promi
   await audit(`batch:${verb} ${args.join(" ")}`);
 }
 
-async function withSession<T>(fn: (pet: PetCursor) => Promise<T>, opts: { pace?: SpeedPreset; silent?: boolean } = {}): Promise<T> {
+async function withSession<T>(fn: (pet: PetCursor) => Promise<T>, opts: { pace?: SpeedPreset; silent?: boolean; readOnly?: boolean } = {}): Promise<T> {
   const s = loadState();
   const pet = await connect({ wsUrl: s.WS_URL, pace: opts.pace });
   if (opts.silent) pet.silent = true;
+  // Drain page-side human-takeover buffer FIRST so audit logs stay in temporal order
+  const humanEntries = await pet.drainHumanLog();
+  for (const e of humanEntries) {
+    await audit(`grab (${e.from.x},${e.from.y}) → (${e.to.x},${e.to.y})`, "HUMAN-TAKEOVER", e.endTs);
+  }
+  // Block mutating actions until the human releases the wheel
+  if (!opts.readOnly) await pet.waitForUngrab();
   try {
     return await fn(pet);
   } finally {
@@ -285,14 +292,14 @@ async function main(): Promise<number> {
 
     case "log": {
       if (pos[0] === "clear") {
-        await withSession((pet) => pet.clearLog());
+        await withSession((pet) => pet.clearLog(), { readOnly: true });
         console.log("log cleared");
         return 0;
       }
       const since = flags.since ? parseSince(String(flags.since)) : 0;
       const type = flags.type ? String(flags.type) : "";
       const statusFilter = flags.status ? parseStatusFilter(String(flags.status)) : null;
-      const entries = await withSession((pet) => pet.getLog());
+      const entries = await withSession((pet) => pet.getLog(), { readOnly: true });
       const now = Date.now();
       const filtered = entries.filter((e) => {
         if (since && now - e.t > since) return false;
@@ -316,7 +323,7 @@ async function main(): Promise<number> {
     case "wait-idle": {
       const stable = pos[0] ? parseInt(pos[0], 10) : 500;
       const timeout = flags.timeout ? parseInt(String(flags.timeout), 10) : 30000;
-      await withSession((pet) => pet.waitIdle(stable, timeout));
+      await withSession((pet) => pet.waitIdle(stable, timeout), { readOnly: true });
       console.log(`idle (stable ${stable}ms)`);
       return 0;
     }
@@ -358,7 +365,7 @@ async function main(): Promise<number> {
         console.log(fmtSnapshot(entries));
         const url = await pet.eval<string>("location.href");
         await audit(`snapshot ${entries.length} elements at ${url}`);
-      });
+      }, { readOnly: true });
       return 0;
     }
 
@@ -381,7 +388,7 @@ async function main(): Promise<number> {
           }
         }
         await audit(`nearby ${entries.length} within ${radius}px`);
-      });
+      }, { readOnly: true });
       return 0;
     }
 
@@ -487,7 +494,10 @@ async function main(): Promise<number> {
     case "eval": {
       if (!pos.length) throw new Error("pet eval: missing expression (use `@file.js` or `-` for stdin)");
       const expr = (pos[0] === "-" || pos[0].startsWith("@")) ? readSource(pos[0]) : pos.join(" ");
-      const v = await withSession((pet) => pet.eval(expr));
+      // eval is the god-mode escape hatch. Even during human takeover the
+      // human needs to be able to inspect/reset state via eval — otherwise
+      // a stuck __pet_human_grabbing flag self-deadlocks.
+      const v = await withSession((pet) => pet.eval(expr), { readOnly: true });
       if (v === undefined || v === null) console.log(String(v));
       else if (typeof v === "object") console.log(require("util").inspect(v, { depth: 4, colors: false, breakLength: 100 }));
       else console.log(String(v));
@@ -498,7 +508,7 @@ async function main(): Promise<number> {
 
     case "screenshot": {
       const path = pos[0] || "screenshot.png";
-      const buf = await withSession((pet) => pet.screenshot());
+      const buf = await withSession((pet) => pet.screenshot(), { readOnly: true });
       writeFileSync(path, buf);
       console.log(path);
       await audit(`screenshot ${path} (${buf.length} bytes)`);
@@ -506,7 +516,7 @@ async function main(): Promise<number> {
     }
 
     case "text": {
-      const v = await withSession((pet) => pet.text(parseTarget(pos[0])));
+      const v = await withSession((pet) => pet.text(parseTarget(pos[0])), { readOnly: true });
       if (v !== null) process.stdout.write(v + "\n");
       else process.exit(2);
       return 0;
@@ -514,7 +524,7 @@ async function main(): Promise<number> {
 
     case "html": {
       const t = pos[0] ? parseTarget(pos[0]) : "html";
-      const v = await withSession((pet) => pet.html(t as any));
+      const v = await withSession((pet) => pet.html(t as any), { readOnly: true });
       if (v !== null) process.stdout.write(v + "\n");
       else process.exit(2);
       return 0;
@@ -523,7 +533,7 @@ async function main(): Promise<number> {
     case "wait": {
       const t = parseTarget(pos[0]);
       const timeout = flags.timeout ? parseInt(String(flags.timeout), 10) : 5000;
-      await withSession((pet) => pet.waitFor(t, timeout));
+      await withSession((pet) => pet.waitFor(t, timeout), { readOnly: true });
       return 0;
     }
 
@@ -531,7 +541,7 @@ async function main(): Promise<number> {
       await withSession(async (pet) => {
         const p = pet.position();
         console.log(`x=${Math.round(p.x)} y=${Math.round(p.y)}`);
-      });
+      }, { readOnly: true });
       return 0;
     }
 
@@ -586,7 +596,7 @@ async function main(): Promise<number> {
       await withSession(async (pet) => {
         const b = await pet.box(sel);
         console.log(`x=${Math.round(b.x)} y=${Math.round(b.y)} w=${Math.round(b.w)} h=${Math.round(b.h)}`);
-      });
+      }, { readOnly: true });
       return 0;
     }
 
