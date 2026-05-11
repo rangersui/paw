@@ -17,142 +17,166 @@ paw  = Physical Agent Worker   (2026, the AI's body in the browser)
 
 ## Why
 
-CDP 是基建——谁都能做。paw 的三个差异化是：
+CDP is infrastructure — anyone can wrap it. PAW's three differentiators:
 
-1. **可见光标 / 角色** — trust through visibility. 人类肉眼能看见 AI 在干什么。
-2. **审计日志** — 每个动作 PUT 到 elastik + 本地 `.pawprint`. Tee 给 reviewer agent 实时审查。
-3. **游戏化** — 物理引擎 + 局部感知 + WASD 操控（roadmap v0.5-v0.6）。
+1. **Visible cursor / character** — trust through visibility. A human watching the screen can literally see what the AI is doing, action by action.
+2. **Audit log** — every action is appended to `~/.pawprint` locally AND (optionally) PUT to an elastik URL as a tee for a reviewer agent.
+3. **Human-in-the-loop shared control** — Alt+drag the cursor with your real mouse to redirect AI mid-task. AI commands automatically pause while you're holding the wheel; resume when you release.
 
-ghost-cursor 优化"骗网站像人"；paw 优化"让人看清 AI 干了啥"。目标不同，节奏不同。
+`ghost-cursor` optimizes for "fool the website into thinking it's human". PAW optimizes for "let the human see exactly what the AI just did." Different goals, different cadence — PAW is deliberately slow (~1.4s per click by default) so the human can follow.
 
-## 快速上手
+## Quick start
 
 ```bash
-# 1. 起浏览器 + 连接（自动检测 Brave / Chrome / Edge）
+# 1. Auto-launch a Chromium-family browser with the debug port open
 paw start brave --url https://example.com
+# (also detects chrome / edge; pass --port to change from 9222)
 
-# 2. 看页面有啥
+# 2. See what's interactive on the page
 paw snapshot
 #   [1] link  More information...
 #   [2] link  https://www.iana.org/domains/example
 
-# 3. 玩
-paw click 1                 # 光标 bezier 滑过去 → 元素绿框 → 缩 0.85x → 真 click → 弹回 → 等页面
+# 3. Drive
+paw click 1                 # cursor walks bezier → highlight → press-shrink → real click → pause
 paw hover 2
 paw eval "document.title"
 paw screenshot
 
-# 4. 断
+# 4. Close session (browser keeps running)
 paw close
 ```
 
-## CLI（24 个 verb）
+## CLI verbs
 
-### 会话
+### Session
 
-| verb | 用途 |
+| verb | what |
 |---|---|
-| `paw start [brave\|chrome\|edge] [--url U] [--port P]` | 启动浏览器 + 连接 |
-| `paw connect <port> [url-substring]` | 连现有 9222 + 写 `~/.paw` |
-| `paw close` | 清会话文件 |
+| `paw start [brave\|chrome\|edge] [--url U] [--port P]` | launch a browser with `--remote-debugging-port` and connect |
+| `paw connect <port> [url-substring]` | connect to a Chromium already running with debug port; writes `~/.paw` |
+| `paw close` | clear the session file |
 
-### 感知
+### Perception
 
-| verb | 用途 |
+| verb | what |
 |---|---|
-| `paw snapshot` | 全页可交互元素编号清单 |
-| `paw nearby [--radius N] [--limit N]` | 光标附近的元素（省 token） |
-| `paw text <n\|sel>` | textContent |
-| `paw html [sel]` | outerHTML |
-| `paw screenshot [path]` | PNG 截图 |
-| `paw position` / `paw box <sel>` | 坐标 |
+| `paw snapshot` | numbered list of every interactive element on the page |
+| `paw visible` | only elements currently in viewport (what the human sees) |
+| `paw show <text\|sel>` | `scrollIntoView` a CSS selector OR a text substring (whitespace-normalized) |
+| `paw nearby [--radius N] [--limit N]` | only elements within radius px of cursor — saves AI tokens |
+| `paw text <n\|sel>` | `textContent` |
+| `paw html [sel]` | `outerHTML`, defaults to whole document |
+| `paw screenshot [path]` | PNG screenshot, default `./screenshot.png` |
+| `paw position` / `paw box <sel>` | cursor xy / element bounding rect |
 
-### 动作（默认有可见动画）
+### Actions (animated by default)
 
-| verb | 节奏（normal） |
+| verb | what |
 |---|---|
-| `paw click <n\|sel> [--right\|--middle]` | bezier → 高亮 → 缩 → 砸 → 弹 |
-| `paw dblclick / rightclick / hover` | 同上 |
-| `paw type <n\|sel> <text\|@file\|->` | click + Input.insertText |
-| `paw keypress <key>` | Enter / Tab / ArrowDown |
-| `paw drag <from> <to>` | press → 沿 bezier 走 → release |
-| `paw scroll <up\|down\|left\|right> [px]` | wheel events |
+| `paw click <n\|sel> [--right\|--middle]` | bezier walk → outline highlight → press-shrink → real CDP mouse event → release → unhighlight → pause |
+| `paw dblclick` / `paw rightclick` / `paw hover` | same envelope, different event |
+| `paw type <n\|sel> <text\|@file\|->` | click into the input + `Input.insertText` (text can come from a file or stdin) |
+| `paw keypress <key>` | `Enter`, `Tab`, `ArrowDown`, ... |
+| `paw drag <from> <to>` | press → bezier walk dispatching mouseMoved with button held → release |
+| `paw scroll <up\|down\|left\|right> [px]` | wheel events at cursor position |
 
-### 直通（无动画）
+### Cursor as a first-class object
 
-| verb | 用途 |
+Compose any motion AI's high-level verbs don't cover:
+
+| verb | what |
 |---|---|
-| `paw goto <url>` | Page.navigate（等 load） |
-| `paw eval <expr\|@file.js\|->` | sudo 逃生舱 |
-| `paw wait <n\|sel>` | poll until present |
-| `paw wait-idle [stableMs]` | 等网络静默 |
-| `paw log [--since 5s] [--type T] [--status '>=N']` | console + fetch + XHR + error 日志 |
-| `paw dismiss-cookies [--reject\|--list]` | 11 CMP + 文本兜底 |
+| `paw move <x> <y>` | walk cursor to absolute viewport coordinates |
+| `paw moveby <dx> <dy>` | relative offset from current cursor position |
+| `paw press [--right\|--middle]` | mouseDown at current cursor position; sets a persistent press flag |
+| `paw release` | mouseUp + clear the press flag |
 
-### 批量与模式
+Manual drag composed from primitives (the press flag persists across `paw` invocations via page-side state, so subsequent `paw move` dispatches `mouseMoved` with the button held):
 
-| verb | 用途 |
+```bash
+paw move 100 305 && paw press
+paw move 250 200            # cursor mid-drag — dragged element follows
+paw move 350 200            # multi-segment OK
+paw move 273 305
+paw release
+```
+
+### Pass-through (no animation)
+
+| verb | what |
 |---|---|
-| `paw batch [@file\|-]` | 多 verb 一条 WS 连发 |
-| `paw auto` | 信息：auto 就是默认 |
-| `paw play` | v0.6 WASD 模式（roadmap） |
+| `paw goto <url>` | `Page.navigate` (waits for load) |
+| `paw eval <expr\|@file.js\|->` | `Runtime.evaluate`; expression can come from a file or stdin |
+| `paw wait <n\|sel>` | poll until selector/index present |
+| `paw wait-idle [stableMs]` | block until the page's network has been quiet for N ms |
+| `paw log [--since 5s] [--type T] [--status '>=N']` | dump page log (console + fetch + XHR + error events) |
+| `paw dismiss-cookies [--reject\|--list]` | clicks Accept/Reject on 11 known CMPs (OneTrust, Cookiebot, Didomi, Quantcast, Usercentrics, CookieYes, TrustArc, Iubenda, Osano, Termly, Google FC) plus a generic text-button fallback |
 
-### 规则
+### Batch & modes
 
-- 数字开头 → snapshot/nearby 编号；其它 → CSS selector
-- `@file` → 从文件读 JS/文本；`-` → stdin
-- `--speed fast | normal | slow` 或 `PAW_SPEED=` → 全局节奏
-- `--renderer cursor | none` → 切换；v0.1 只支持这俩
-- `--silent` = `--renderer none`
+| verb | what |
+|---|---|
+| `paw batch [@file\|-]` | run many verbs in one CDP session (no per-command WS setup overhead) |
+| `paw stay` / `paw unstay` | pin the cursor in place (disable idle-rest) / re-enable |
+| `paw auto` | info: auto mode is the default; this just prints a note |
+| `paw play` | interactive WASD control — placeholder for v0.6 |
 
-## 节奏（paw 的灵魂）
+### Rules
 
-故意慢。每个 click 默认 7 阶段、~1.4s：
+- Target arg starting with a digit → snapshot/nearby index. Anything else → CSS selector.
+- `@file.js` → read JS expression from a file. `-` → read from stdin.
+- `--speed fast | normal | slow` or `PAW_SPEED=...` → global cadence preset (see below).
+- `--renderer cursor | none` → swap renderer. `cursor` is default; `none` is equivalent to `--silent` (real CDP events fire, no visible cursor or highlight).
+- `--silent` is shorthand for `--renderer none`.
+
+## Cadence (the soul)
+
+PAW is deliberately slow. Every animated verb runs a 7-phase envelope (~1.4s default):
 
 ```
 move (400ms) → highlight (400ms) → press-shrink (80ms)
             ↓
      dispatch + press pause (150ms)
             ↓
-release → press-restore (80ms+100ms) → unhighlight → observe (300ms)
+release → press-restore (80+100ms) → unhighlight → observe (300ms)
 ```
 
-| preset | total | who |
+| preset | total | for |
 |---|---|---|
-| `fast` | ~280ms | AI 批量 |
-| `normal` | ~1.4s | 给人看（**默认**） |
-| `slow` | ~3.5s | 演示/录屏 |
+| `fast` | ~280ms | AI batch work |
+| `normal` | ~1.4s | **default** — humans can follow along |
+| `slow` | ~3.5s | demos / screen recording |
 
-## 审计（paw 的另一个灵魂）
+Override per call (`paw click 1 --speed fast`) or globally (`export PAW_SPEED=fast`).
 
-每个 state-changing verb 自动双写：
+## Audit log (the other soul)
 
-**本地** `~/.paw.log`（mode 0600，always on）：
+Every state-changing verb is appended (sync, mode 0600) to `~/.pawprint`:
+
 ```
-2026-05-11T09:15:32.198Z click [1] button "Click me" at (89,125)
-2026-05-11T09:15:33.206Z hover [4] clickable "Hover target A" at (114,239)
+2026-05-11T09:15:32.198Z [AI] click [1] button "Click me" at (89,125)
+2026-05-11T09:15:33.206Z [HUMAN-TAKEOVER] grab (89,125) → (340,200)
+2026-05-11T09:15:34.412Z [AI] hover [4] clickable "Hover target A" at (114,239)
 ```
 
-**远端 elastik**（`PAW_ELASTIK=http://host:port` 时）：
+When the human Alt+drags the cursor, the takeover is buffered page-side and flushed into the audit log with a `[HUMAN-TAKEOVER]` tag on the next `paw` command. Reviewer agents tell autopilot from manual control at a glance — like the cockpit voice recorder distinguishing pilot inputs from autopilot.
+
+If `PAW_ELASTIK=http://host:port` is set, every audit line is also PUT to `${PAW_ELASTIK}/home/pawprint/<iso-timestamp>` (fire-and-forget, max 500ms timeout). Any client can subscribe to `/listen/home/pawprint/*` for an SSE stream of every PAW action in real time:
+
 ```bash
-PUT /home/log/paw/2026-05-11T09:15:32.198Z
-Body: click [1] button "Click me" at (89,125)
+curl -N http://localhost:3105/listen/home/pawprint/*
 ```
 
-reviewer agent SSE 流：
-```bash
-curl http://localhost:3105/listen/home/log/paw/*
-```
-
-| env | 用途 |
+| env var | purpose |
 |---|---|
 | `PAW_ELASTIK` | elastik base URL |
-| `PAW_ELASTIK_TOKEN` / `ELASTIK_WRITE_TOKEN` | write 权限 |
-| `PAW_NO_AUDIT=1` | 完全关闭审计 |
+| `PAW_ELASTIK_TOKEN` or `ELASTIK_WRITE_TOKEN` | write auth |
+| `PAW_NO_AUDIT=1` | disable both local and remote audit |
 
-## 状态文件
+## State file
 
-`~/.paw`（KEY=VALUE，shell-sourceable，no JSON envelope）：
+`~/.paw` — KEY=VALUE plain text, shell-sourceable, no JSON envelope:
 
 ```
 HOST=127.0.0.1
@@ -162,7 +186,7 @@ PAGE_URL=https://example.com
 TITLE=Example Domain
 ```
 
-## 渲染器接口（v0.1 一个 impl，v0.3+ 扩展）
+## Renderer interface
 
 ```ts
 interface Renderer {
@@ -176,44 +200,79 @@ interface Renderer {
 }
 ```
 
-v0.1 提供 `CursorRenderer`（黑底白边 SVG 箭头 + bezier + outline 高亮 + 按下缩放）。`--renderer pet/highlight/...` 当前会报"v0.3+ 未实现"。
+v1.0 ships one impl: `CursorRenderer` — a black-outlined SVG arrow injected via `Runtime.evaluate`, animated via CSS `@keyframes` built from a quadratic bezier path, with element-outline highlight and cursor scale-shrink on press. Future renderers (`pet` / `highlight` / `platform`) will drop in via the same interface without changing the CLI.
 
-## 偷的清单
+## Live HTML REPL with elastik
 
-| 来源 | 偷什么 | 阶段 |
-|---|---|---|
-| [sids/cdp-browser](https://github.com/sids/cdp-browser) | native WebSocket CDP + dismiss-cookies 思路 | v0.2 |
-| ghost-cursor | bezier 路径 | v0.1 |
-| Shimeji | 物理引擎 + DOM 平台碰撞 + 走路 sprite | v0.5 |
-| elastik V6 | 6 verb HTTP 字节引擎，做审计后端 | v0.1 |
+The defining use case isn't automating other people's sites — it's authoring your own. PAW + elastik gives you a live HTML REPL where the URL IS the source of truth:
+
+```bash
+# 1. seed a blank canvas at a URL
+curl -X PUT $ELASTIK/home/canvas.html \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: text/html" \
+  --data '<!doctype html><html><body></body></html>'
+
+# 2. point paw at it
+paw goto $ELASTIK/home/canvas.html
+
+# 3. AI rewrites the entire DOM via paw eval (CSS + HTML + <script>)
+paw eval - <<'JS'
+  document.head.innerHTML = '<title>my app</title><style>...</style>';
+  document.body.innerHTML = '<h1>...</h1><button id="x">click</button><script>...</script>';
+JS
+
+# 4. PUT the live DOM back — URL becomes the new source of truth
+paw eval - <<'JS'
+  const html = '<!doctype html>\n' + document.documentElement.outerHTML;
+  await fetch('/home/canvas.html', {
+    method: 'PUT',
+    headers: { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'text/html' },
+    body: html,
+  });
+JS
+```
+
+After step 4, `curl $ELASTIK/home/canvas.html` returns the new page. Any browser opening that URL gets the AI-built interactive app, fully self-contained — because `documentElement.outerHTML` serializes `<script>` tags verbatim. Multiple tabs subscribed via `EventSource('/listen/home/canvas.html')` get every PUT pushed in real time with an etag for change detection.
+
+No build step. No deploy. No framework. No database. The HTML *is* the artifact, the URL *is* the publish target, the browser *is* the editor.
+
+## Acknowledgments
+
+PAW stands on the work of these projects. Each shaped a piece of the architecture:
+
+- [**sids/cdp-browser**](https://github.com/sids/cdp-browser) — established the precedent of a small, native-WebSocket CDP CLI for AI agents. PAW's connection shape and the `dismiss-cookies` verb draw on its design.
+- [**Xetera/ghost-cursor**](https://github.com/Xetera/ghost-cursor) — the canonical reference for bezier path generation in cursor automation. PAW inverts the goal (visible rather than evasive) but uses the same underlying curve math.
+- **Shimeji** — the desktop-pet pattern of a character with physics that walks across UI surfaces and is grabbable by the user's real mouse. Reserved as inspiration for the v1.4 `PlatformRenderer`.
+- [**elastik V6**](https://github.com/rangersui/Elastik) — the 6-verb HTTP byte engine that serves as PAW's optional audit backend and persistence layer for the live-HTML-REPL workflow.
 
 ## Roadmap
 
 ```
-v0.1  ✓ CursorRenderer + 22 verbs + audit + snapshot
-v0.2  ✓ dismiss-cookies + log + wait-idle + start
-v0.3    PetRenderer (sprite sheet: 走路/砸/写/被砸)
-v0.4    nearby 已落; 多 Renderer 真正切换 (cursor|pet|highlight|none)
-v0.5    PlatformRenderer (Shimeji 物理: 重力 + DOM 平台碰撞)
-v0.6    paw play WASD 游戏模式
-v0.7    speculative prefetch (idle 巡逻)
-v1.0    Ranger OC sprite + 自定义工具动画
+v1.0  ✓ CursorRenderer + 30+ verbs + audit (~/.pawprint) + snapshot
+       Alt+drag handoff + [AI]/[HUMAN-TAKEOVER] tags + viewport-shared-truth (visible/show)
+
+v1.1    move/moveby/press/release primitives polish
+v1.2    PetRenderer — sprite-sheet animation (walk/hammer/pen/magnifier/broom/camera)
+v1.3    multi-Renderer real switching via --renderer pet|highlight|platform|none
+v1.4    PlatformRenderer — Shimeji-style physics; cursor walks on DOM platforms
+v1.5    paw play — interactive WASD takeover mode
+v1.6    speculative prefetch — idle cursor patrols the page caching coordinates
 ```
 
-## 哲学
+## Philosophy
 
 ```
-curl 是 HTTP 的遥控器 (1996)
-paw  是浏览器的身体 (2026)
+curl is HTTP's remote control      (1996)
+paw  is the browser's body         (2026)
        Physical Agent Worker
 
-关卡是网页
-NPC 是 DOM 元素
-AI 是灵魂
-角色是身体
-CDP 是神经系统
-物理引擎是世界规则
-人类是偶尔接管的上帝之手
+the page is the level
+DOM elements are NPCs
+the AI is the soul
+the cursor is the body
+CDP is the nervous system
+physics (v1.4+) is the world's rules
+the human is the occasional god-hand that grabs the wheel
 ```
 
 ## License
