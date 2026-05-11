@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__petArrived";
-const SCRIPT_VERSION = 11;
+const SCRIPT_VERSION = 12;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -146,6 +146,54 @@ const PAGE_SCRIPT = `
       window.__pet_pos = c;
     }
   }, { passive: true });
+
+  // ─── human-grab affordance: Alt+drag the cursor with the real mouse ───
+  // The cursor stays pointer-events:none so it doesn't block page clicks.
+  // We listen globally for Alt+mousedown; if the mouse coords are inside
+  // the cursor's bbox, we capture into a manual-drag loop until mouseup.
+  // Shimeji-style direct manipulation, but gated on Alt so normal browsing
+  // (including text selection with Shift) is undisturbed.
+  let grabbing = false;
+  function setHighlightOn(on) {
+    const el = document.getElementById(ID);
+    if (!el) return;
+    el.style.outline = on ? '2px solid #3b82f6' : '';
+    el.style.outlineOffset = on ? '2px' : '';
+  }
+  window.addEventListener('keydown', function (e) { if (e.altKey && !grabbing) setHighlightOn(true); });
+  window.addEventListener('keyup', function (e) { if (!e.altKey && !grabbing) setHighlightOn(false); });
+  window.addEventListener('mousedown', function (e) {
+    if (!e.altKey) return;
+    const el = document.getElementById(ID);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const pad = 6;
+    if (e.clientX < r.left - pad || e.clientX > r.right + pad || e.clientY < r.top - pad || e.clientY > r.bottom + pad) return;
+    e.preventDefault();
+    e.stopPropagation();
+    grabbing = true;
+    clearRest();
+    setHighlightOn(true);
+    const startMouse = { x: e.clientX, y: e.clientY };
+    const startCursor = window.__pet_pos || { x: 0, y: 0 };
+    function onMove(ev) {
+      const nx = startCursor.x + ev.clientX - startMouse.x;
+      const ny = startCursor.y + ev.clientY - startMouse.y;
+      el.style.animation = 'none';
+      el.style.transform = 'translate(' + nx + 'px,' + ny + 'px) scale(1)';
+      window.__pet_pos = { x: nx, y: ny };
+      window.__pet_resting = false;
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove, true);
+      window.removeEventListener('mouseup', onUp, true);
+      grabbing = false;
+      setHighlightOn(false);
+      scheduleRest();
+    }
+    window.addEventListener('mousemove', onMove, true);
+    window.addEventListener('mouseup', onUp, true);
+  }, true);
 
   // ─── log buffer + network counter (monkey-patch, page-side) ───
   function installLog() {
