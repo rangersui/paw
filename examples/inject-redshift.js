@@ -1,4 +1,4 @@
-// pet eval @inject-redshift.js
+// paw eval @inject-redshift.js
 // — slowly drift the page hue, demo of file-injection power
 (() => {
   if (window.__redshift) {

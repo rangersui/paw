@@ -3,7 +3,7 @@
 > **Physical Agent Worker.** AI's body on the web — a visible cursor that walks, clicks, and types under AI control, with a real mouse you can grab (Alt+drag) to redirect mid-task. Human sees what AI does; AI sees what human just did.
 
 ```bash
-npm i -g paw-browser
+npm i -g paw-core
 paw start brave --url https://example.com
 paw click 1
 ```
@@ -13,7 +13,7 @@ curl = Client URL              (1996, HTTP's remote control)
 paw  = Physical Agent Worker   (2026, the AI's body in the browser)
 ```
 
-**Identity.** Product name is **PAW**. The CLI command you type is `paw`. The npm package is [`paw-browser`](https://www.npmjs.com/package/paw-browser) (the bare `paw` slot is an abandoned 2018 squatter). Source lives at [github.com/rangersui/paw](https://github.com/rangersui/paw).
+**Identity.** Product name is **PAW**. The CLI command you type is `paw`. The npm package is [`paw-core`](https://www.npmjs.com/package/paw-core) (the bare `paw` slot is an abandoned 2018 squatter). Source lives at [github.com/rangersui/paw](https://github.com/rangersui/paw).
 
 **Zero runtime dependencies.** Node 22+. `dependencies: {}` — literally empty. Native `WebSocket`, no `ws`, no Playwright, no Puppeteer, no MCP, no browser download.
 
@@ -40,7 +40,7 @@ npm link           # puts `paw` in your global PATH
 paw help
 ```
 
-`dist/` is git-ignored, so `npm run build` is required before the bin/ wrapper can find `dist/cli.js`. `npm unlink -g paw-browser` to disconnect.
+`dist/` is git-ignored, so `npm run build` is required before the bin/ wrapper can find `dist/cli.js`. `npm unlink -g paw-core` to disconnect.
 
 ## Quick start
 

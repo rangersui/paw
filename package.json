@@ -1,5 +1,5 @@
 {
-  "name": "paw-browser",
+  "name": "paw-core",
   "version": "1.0.3",
   "description": "PAW — Physical Agent Worker. AI's body on the web. `paw click 1` walks a visible cursor across the page on a bezier curve, then fires real CDP mouse events. Human can grab the wheel mid-task with Alt+drag. Zero runtime dependencies.",
   "license": "MIT",
@@ -15,7 +15,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "paw": "bin/paw"
+    "paw": "./bin/paw"
   },
   "files": [
     "dist",
