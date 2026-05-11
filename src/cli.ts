@@ -230,6 +230,7 @@ const HELP = `paw — visualized CDP client. AI-driven, curl-shaped, depth-1.
   paw box <sel>                         bounding rect
 
   paw batch [@file|-]                   run multiple verbs in ONE CDP session (stdin or file)
+  paw say <text|@file|->                pop a 1.5s speech-bubble next to the cursor (no action)
   paw stay                              pin cursor in place (no idle rest)
   paw unstay                            re-enable 5s idle rest
   paw auto                              (info) auto is the default
@@ -807,6 +808,19 @@ async function main(): Promise<number> {
     case "auto": {
       console.log("paw: auto mode is already the default. every verb runs autonomously without prompting.");
       console.log("     use `paw play` for interactive WASD control.");
+      return 0;
+    }
+
+    case "say": {
+      const text = pos.length === 1 && (pos[0] === "-" || pos[0].startsWith("@")) ? readSource(pos[0]) : pos.join(" ");
+      if (!text.trim()) throw new Error("paw say: missing text (or pass `@file` / `-` for stdin)");
+      // Read pause = 1500ms so the bubble is mostly visible when paw exits.
+      // Page-side fade-out continues independently if the user moves on.
+      await withSession(async (paw) => {
+        await paw.toast(text, 1500);
+      }, { readOnly: true });
+      const preview = text.length > 100 ? text.slice(0, 97) + "..." : text;
+      await audit(`say "${preview.replace(/"/g, '\\"')}"`);
       return 0;
     }
 
