@@ -624,8 +624,17 @@ async function main(): Promise<number> {
       const key = pos[0];
       if (!key) throw new Error("paw keypress: missing key");
       const why = parseWhy(flags);
+      // Keypress has no spatial ceremony (no cursor walk, no highlight),
+      // so the toast IS the visualization — always shown. Friendly glyphs
+      // for the common keys.
+      const glyphMap: Record<string, string> = {
+        Enter: "↵ Enter", Tab: "⇥ Tab", Escape: "⎋ Esc", Backspace: "⌫ Back",
+        ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→",
+        " ": "␣ Space",
+      };
+      const glyph = `⌨ ${glyphMap[key] || key}`;
       await withSession(async (paw) => {
-        if (why) await paw.toast(why);
+        await paw.toast(why || glyph);
         await paw.keypress(key);
       });
       await audit(withWhy(`keypress ${key}`, why));
