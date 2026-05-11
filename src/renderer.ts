@@ -11,7 +11,7 @@ export const DEFAULT_CURSOR =
   "data:image/svg+xml;base64," + Buffer.from(DEFAULT_CURSOR_SVG).toString("base64");
 
 const BINDING = "__pawArrived";
-const SCRIPT_VERSION = 8;
+const SCRIPT_VERSION = 9;
 const IDLE_MS = 5000;
 const CORNER_PAD = 24;
 
@@ -553,15 +553,92 @@ function makePageScript(cursor: string, size: number): string {
     const arr = window.__paw_snapshot_els;
     return _live(arr && arr[n]);
   }
+  // Text-substring fallback: when a string target doesn't match as a CSS
+  // selector, scan visible leaf-ish elements for whitespace-normalized text
+  // containing the query. Lets AI/human point at things by what they SAY
+  // instead of what selector matches them — same intuition as paw show.
+  function findElByText(target) {
+    const norm = function (s) { return String(s || '').replace(/\s+/g, ' ').trim(); };
+    const tNorm = norm(target);
+    if (!tNorm) return null;
+    const all = document.querySelectorAll('body *');
+    for (let i = 0; i < all.length; i++) {
+      const e = all[i];
+      if (e.children.length > 8) continue;
+      const txt = norm(e.textContent);
+      if (txt.length === 0 || txt.length > 500) continue;
+      if (txt.indexOf(tNorm) >= 0) {
+        const r = e.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) return e;
+      }
+    }
+    return null;
+  }
   function liveSel(sel) {
-    try { return _live(document.querySelector(sel)); } catch (e) { return null; }
+    try {
+      const el = document.querySelector(sel);
+      if (el) return _live(el);
+    } catch (e) {}
+    const fb = findElByText(sel);
+    return fb ? _live(fb) : null;
   }
   function resolveEl(target) {
     if (typeof target === 'number') {
       const arr = window.__paw_snapshot_els;
       return (arr && arr[target]) || null;
     }
-    try { return document.querySelector(target); } catch (e) { return null; }
+    try {
+      const el = document.querySelector(target);
+      if (el) return el;
+    } catch (e) {}
+    return findElByText(target);
+  }
+  function findAllByText(target, limit) {
+    limit = limit || 20;
+    const norm = function (s) { return String(s || '').replace(/\s+/g, ' ').trim(); };
+    const tNorm = norm(target);
+    if (!tNorm) return [];
+    const out = [];
+    const all = document.querySelectorAll('body *');
+    for (let i = 0; i < all.length && out.length < limit; i++) {
+      const e = all[i];
+      if (e.children.length > 8) continue;
+      const txt = norm(e.textContent);
+      if (txt.length === 0 || txt.length > 500) continue;
+      if (txt.indexOf(tNorm) >= 0) {
+        const r = e.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) continue;
+        out.push({
+          tag: e.tagName.toLowerCase(),
+          text: txt.length > 80 ? txt.slice(0, 77) + '...' : txt,
+          x: Math.round(r.left + r.width / 2),
+          y: Math.round(r.top + r.height / 2),
+          offscreen: r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth,
+        });
+      }
+    }
+    return out;
+  }
+  // Set textContent or value on a target (resolved via resolveEl). For
+  // <input>/<textarea> writes .value + fires 'input' event so reactive
+  // frameworks re-render. For other elements writes textContent.
+  // Returns {tag, before, after} for audit purposes.
+  function setText(target, newText) {
+    const el = resolveEl(target);
+    if (!el) return null;
+    const before = ('value' in el && typeof el.value === 'string') ? el.value : (el.textContent || '');
+    if ('value' in el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) {
+      el.value = newText;
+      try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+      try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+    } else {
+      el.textContent = newText;
+    }
+    return {
+      tag: el.tagName.toLowerCase(),
+      before: String(before).slice(0, 200),
+      after: String(newText).slice(0, 200),
+    };
   }
   // ─── visual ceremony: highlight target, press-down cursor scale ───
   function highlight(target, color) {
@@ -750,7 +827,7 @@ function makePageScript(cursor: string, size: number): string {
     }
     r.el.addEventListener('animationend', done);
   }
-  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast, snapshotOverlay: snapshotOverlay, waitIdleSpinner: waitIdleSpinner, waitIdleSpinnerDone: waitIdleSpinnerDone, playStep: playStep, playStepDone: playStepDone, installSnapshotWatcher: installSnapshotWatcher };
+  window.__paw = { v: ${SCRIPT_VERSION}, ensure: ensure, animate: animate, flash: flash, snapshot: snapshot, nearby: nearby, visible: visible, show: show, rest: rest, stay: stay, unstay: unstay, liveCenter: liveCenter, liveSel: liveSel, dismissCookies: dismissCookies, highlight: highlight, unhighlight: unhighlight, pressScale: pressScale, toast: toast, snapshotOverlay: snapshotOverlay, waitIdleSpinner: waitIdleSpinner, waitIdleSpinnerDone: waitIdleSpinnerDone, playStep: playStep, playStepDone: playStepDone, installSnapshotWatcher: installSnapshotWatcher, findAllByText: findAllByText, setText: setText };
   installSnapshotWatcher();
   // Self-render the cursor at document_start so the body is visible on
   // every fresh page — F5, navigation, SPA route change — without

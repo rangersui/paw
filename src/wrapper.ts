@@ -460,6 +460,55 @@ export class Paw {
     });
   }
 
+  /**
+   * Write textContent (or .value for inputs) to a target. Cursor walks +
+   * yellow highlight + write + unhighlight, matching the rest of paw's
+   * visible-ceremony style.
+   *
+   * Target resolution accepts: snapshot index, CSS selector, OR text
+   * substring (falls back when selector doesn't match). So `paw set "Old
+   * Title" "New Title"` works without thinking about CSS.
+   */
+  async set(target: Target, text: string): Promise<{ tag: string; before: string; after: string } | null> {
+    if (this.silent) {
+      const res = await this.client.send<{ result: { value: any } }>("Runtime.evaluate", {
+        expression: `window.__paw && window.__paw.setText(${
+          typeof target === "number" ? target : JSON.stringify(target)
+        }, ${JSON.stringify(text)})`,
+        returnByValue: true,
+      });
+      return res.result?.value ?? null;
+    }
+    // Find center first so highlight + cursor walk anchor on the resolved
+    // element (works even when target is a text substring).
+    const c = await this.center(target);
+    await this.animator.moveTo(c, { duration: this.pace.move });
+    await this.animator.highlight(target, "#fbbf24");
+    await sleep(this.pace.highlight);
+    const res = await this.client.send<{ result: { value: any } }>("Runtime.evaluate", {
+      expression: `window.__paw && window.__paw.setText(${
+        typeof target === "number" ? target : JSON.stringify(target)
+      }, ${JSON.stringify(text)})`,
+      returnByValue: true,
+    });
+    await sleep(this.pace.observe);
+    await this.animator.unhighlight();
+    return res.result?.value ?? null;
+  }
+
+  /**
+   * Text-substring search across the DOM. Returns up to `limit` matches
+   * with their tag, first 80 chars of normalized text, center coords,
+   * and offscreen flag. Pure inspection — no mutation, no animation.
+   */
+  async find(text: string, limit = 20): Promise<Array<{ tag: string; text: string; x: number; y: number; offscreen: boolean }>> {
+    const res = await this.client.send<{ result: { value: any[] } }>("Runtime.evaluate", {
+      expression: `window.__paw && window.__paw.findAllByText(${JSON.stringify(text)}, ${limit})`,
+      returnByValue: true,
+    });
+    return res.result?.value ?? [];
+  }
+
   /** True while the human is Alt+dragging the cursor in the browser. */
   async humanGrabbing(): Promise<boolean> {
     return await this.eval<boolean>("!!window.__paw_human_grabbing");

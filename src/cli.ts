@@ -231,6 +231,8 @@ const HELP = `paw — visualized CDP client. AI-driven, curl-shaped, depth-1.
 
   paw batch [@file|-]                   run multiple verbs in ONE CDP session (stdin or file)
   paw say <text|@file|->                pop a 1.5s speech-bubble next to the cursor (no action)
+  paw find <text> [--limit N]           list DOM elements whose text contains <text> (no mutation)
+  paw set <target> <text|@file|->       write textContent/value on target (target can be N, sel, or text substring)
   paw edit [on|off]                     toggle document.designMode — whole page becomes editable
   paw stay                              pin cursor in place (no idle rest)
   paw unstay                            re-enable 5s idle rest
@@ -238,7 +240,9 @@ const HELP = `paw — visualized CDP client. AI-driven, curl-shaped, depth-1.
   paw play [--step N] [--radius N]      8-way (WASD+QEZC), Space=click nearest-highlighted, F=drag-toggle, Esc=quit
   paw help [verb]
 
-target = positive integer (snapshot/nearby index) or CSS selector
+target = positive integer (snapshot/nearby index), CSS selector, OR text substring
+         (text-substring fallback fires when selector returns no match —
+          so   paw click "Sign in"   and   paw set "Old Title" "New"   just work)
 speed  = fast (~280ms) | normal (~1.4s, default) | slow (~3.5s, demo)
          each click does: bezier move → highlight → press-shrink → release → pause
          PAW_SPEED=fast for global default, --speed S to override per call
@@ -855,6 +859,58 @@ async function main(): Promise<number> {
       }, { readOnly: true });
       const preview = text.length > 100 ? text.slice(0, 97) + "..." : text;
       await audit(`say "${preview.replace(/"/g, '\\"')}"`);
+      return 0;
+    }
+
+    case "set": {
+      // Write textContent/value on a target. Target accepts index, CSS
+      // selector, OR text substring (the fallback in resolveEl). So
+      // `paw set "Old Title" "New Title"` works without thinking about
+      // selectors — the dumbest possible search-and-replace.
+      const target = parseTarget(pos[0]);
+      if (pos.length < 2) throw new Error("paw set: missing new text (use `@file` or `-` for stdin)");
+      const text = (pos[1] === "-" || pos[1].startsWith("@")) ? readSource(pos[1]) : pos.slice(1).join(" ");
+      const pace = parsePace(flags);
+      const why = parseWhy(flags);
+      const result = await withSession(async (paw) => {
+        const preview = text.length > 30 ? text.slice(0, 27) + "..." : text;
+        await paw.toast(why || `✏️ ${preview}`);
+        return paw.set(target, text);
+      }, { pace, silent: parseSilent(flags) });
+      if (!result) {
+        console.error(`paw set: target not found: ${JSON.stringify(pos[0])}`);
+        return 2 as any;
+      }
+      const targetDesc = typeof target === "number" ? `[${target}]` : JSON.stringify(target);
+      const beforePrev = result.before.length > 30 ? result.before.slice(0, 27) + "..." : result.before;
+      const afterPrev = result.after.length > 30 ? result.after.slice(0, 27) + "..." : result.after;
+      console.log(`set <${result.tag}> "${beforePrev}" → "${afterPrev}"`);
+      await audit(withWhy(`set ${targetDesc} <${result.tag}> "${beforePrev}" → "${afterPrev}"`, why));
+      return 0;
+    }
+
+    case "find": {
+      // Text-substring search across the DOM. Returns list of leaf-ish
+      // matches. Indices are for the human's eye — to act on a specific
+      // match, pass a longer text substring to paw click / set / hover.
+      const text = pos.length === 1 && (pos[0] === "-" || pos[0].startsWith("@")) ? readSource(pos[0]) : pos.join(" ");
+      if (!text.trim()) throw new Error("paw find: missing search text");
+      const limit = flags.limit ? parseInt(String(flags.limit), 10) : 20;
+      const matches = await withSession((paw) => paw.find(text, limit), { readOnly: true });
+      if (!matches.length) {
+        console.log("(no matches)");
+        return 2 as any;
+      }
+      const tagW = Math.min(8, Math.max(3, ...matches.map((m) => m.tag.length)));
+      for (let i = 0; i < matches.length; i++) {
+        const m = matches[i];
+        const num = `[${i + 1}]`.padStart(5);
+        const tag = pad(`<${m.tag}>`, tagW + 2);
+        const xy = `(${m.x},${m.y})`.padStart(11);
+        const off = m.offscreen ? "  (offscreen)" : "";
+        console.log(`${num} ${tag} "${m.text}"  ${xy}${off}`);
+      }
+      await audit(`find "${text.slice(0, 60).replace(/"/g, '\\"')}" — ${matches.length} matches`);
       return 0;
     }
 
