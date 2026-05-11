@@ -1,7 +1,7 @@
-import { writeFileSync, readFileSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { CDPClient } from "./cdp";
 import { connect, Paw, Target, LogEntry, SpeedPreset } from "./wrapper";
-import { loadState, saveState, clearState, STATE_FILE } from "./state";
+import { loadState, saveState, clearState, STATE_FILE, State } from "./state";
 import { launch, findBrowser } from "./launch";
 import { audit, describeTarget, LOG_FILE } from "./audit";
 
@@ -149,6 +149,19 @@ function fmtAgo(ms: number): string {
   return `${Math.floor(ms / 60000)}m${Math.floor((ms % 60000) / 1000)}s`;
 }
 
+function tailLines(path: string, n: number): string[] {
+  if (!existsSync(path)) return [];
+  const all = readFileSync(path, "utf8").split("\n").filter((l) => l.length > 0);
+  return all.slice(-Math.max(0, n));
+}
+
+function parseAuditLine(line: string): { ts: string; origin: string; action: string } | null {
+  // Format: 2026-05-11T09:15:32.198Z [AI] click [1] button "Click me" at (89,125)
+  const m = /^(\S+)\s+\[([^\]]+)\]\s+(.*)$/.exec(line);
+  if (!m) return null;
+  return { ts: m[1], origin: m[2], action: m[3] };
+}
+
 function fmtSnapshot(entries: { role: string; name: string; offscreen: boolean }[]): string {
   if (!entries.length) return "(no interactive elements found)";
   const roleW = Math.min(12, Math.max(4, ...entries.map((e) => e.role.length)));
@@ -167,6 +180,7 @@ const HELP = `paw — visualized CDP client. AI-driven, curl-shaped, depth-1.
   paw start [brave|chrome|edge] [--url U] [--port P]   auto-launch + connect
   paw connect <port> [url-substring]    open session (writes ${STATE_FILE})
   paw close                             clear session file
+  paw status                            one-line: host/port/url/title/cursor/last-action
   paw snapshot                          list ALL interactive elements (numbered)
   paw visible                           only elements in current viewport (what the human sees)
   paw show <text|sel>                   scrollIntoView a text substring or CSS selector
@@ -358,6 +372,52 @@ async function main(): Promise<number> {
       clearState();
       console.log(`session cleared (${STATE_FILE})`);
       await audit("close");
+      return 0;
+    }
+
+    case "status": {
+      // Read-only inspection — answers "where am I, what did I just do?"
+      // Does NOT audit (querying state shouldn't pollute the log Ranger
+      // reviews). Degrades gracefully if no session or CDP unreachable.
+      let s: State | null = null;
+      try { s = loadState(); } catch {}
+
+      let cursorPart = "";
+      let titlePart = "";
+      let urlPart = "url=(none)";
+      let stale = false;
+      if (s) {
+        urlPart = `url=${s.PAGE_URL || "(unknown)"}`;
+        titlePart = s.TITLE ? ` title=${JSON.stringify(s.TITLE)}` : "";
+        try {
+          const paw = await connect({ wsUrl: s.WS_URL });
+          const p = paw.position();
+          cursorPart = ` cursor=(${Math.round(p.x)},${Math.round(p.y)})`;
+          await paw.close();
+        } catch {
+          stale = true;
+        }
+      }
+
+      let lastPart = "";
+      const tail = tailLines(LOG_FILE, 1);
+      if (tail.length) {
+        const parsed = parseAuditLine(tail[0]);
+        if (parsed) {
+          const ago = Date.now() - new Date(parsed.ts).getTime();
+          const action = parsed.action.length > 50 ? parsed.action.slice(0, 47) + "..." : parsed.action;
+          lastPart = ` last=[${parsed.origin}] ${action} (${fmtAgo(ago)} ago)`;
+        }
+      }
+
+      if (!s) {
+        const hint = " (run `paw start` or `paw connect <port>` to begin)";
+        console.log(`(no session)${hint}${lastPart}`);
+        return 0;
+      }
+      const hostPort = `host=${s.HOST} port=${s.PORT}`;
+      const staleTag = stale ? " (stale: CDP unreachable)" : "";
+      console.log(`${hostPort} ${urlPart}${titlePart}${cursorPart}${staleTag}${lastPart}`);
       return 0;
     }
 
