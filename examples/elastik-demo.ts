@@ -77,10 +77,35 @@ const HTML = `<!doctype html>
     document.getElementById('menu1').onmouseenter = () => { document.getElementById('hovered').textContent = 'hovered: A'; };
     document.getElementById('menu2').onmouseenter = () => { document.getElementById('hovered').textContent = 'hovered: B'; };
     const card = document.getElementById('card'), bin = document.getElementById('bin');
-    let dragging = false, sx = 0, sy = 0;
-    card.addEventListener('mousedown', (e) => { dragging = true; sx = e.clientX; sy = e.clientY; card.style.zIndex = 1000; log('drag start'); });
-    window.addEventListener('mousemove', (e) => { if (!dragging) return; card.style.transform = 'translate(' + (e.clientX - sx) + 'px,' + (e.clientY - sy) + 'px)'; });
-    window.addEventListener('mouseup', (e) => { if (!dragging) return; dragging = false; const br = bin.getBoundingClientRect(); if (e.clientX >= br.left && e.clientX <= br.right && e.clientY >= br.top && e.clientY <= br.bottom) { log('drag dropped on bin'); bin.textContent = 'CAUGHT IT'; bin.style.background = '#86efac'; } else { log('drag missed bin (cursor at ' + e.clientX + ',' + e.clientY + ' bin at ' + br.left + '-' + br.right + ',' + br.top + '-' + br.bottom + ')'); } });
+    let dragging = false, sx = 0, sy = 0, baseX = 0, baseY = 0;
+    card.addEventListener('mousedown', (e) => {
+      dragging = true;
+      // Parse existing transform so successive drags accumulate from the
+      // current position instead of overwriting (otherwise each drag resets
+      // the card to original CSS coords plus only the latest delta).
+      const m = /translate\\((-?[\\d.]+)px,\\s*(-?[\\d.]+)px\\)/.exec(card.style.transform);
+      baseX = m ? parseFloat(m[1]) : 0;
+      baseY = m ? parseFloat(m[2]) : 0;
+      sx = e.clientX; sy = e.clientY;
+      card.style.zIndex = 1000;
+      log('drag start');
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      card.style.transform = 'translate(' + (baseX + e.clientX - sx) + 'px,' + (baseY + e.clientY - sy) + 'px)';
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (!dragging) return;
+      dragging = false;
+      const br = bin.getBoundingClientRect();
+      if (e.clientX >= br.left && e.clientX <= br.right && e.clientY >= br.top && e.clientY <= br.bottom) {
+        log('drag dropped on bin');
+        bin.textContent = 'CAUGHT IT';
+        bin.style.background = '#86efac';
+      } else {
+        log('drag missed bin (cursor at ' + e.clientX + ',' + e.clientY + ' bin at ' + br.left + '-' + br.right + ',' + br.top + '-' + br.bottom + ')');
+      }
+    });
   </script>
 </body></html>`;
 
