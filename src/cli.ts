@@ -659,8 +659,13 @@ async function main(): Promise<number> {
       const dir = (pos[0] || "down") as "up" | "down" | "left" | "right";
       const px = pos[1] ? parseInt(pos[1], 10) : 400;
       const why = parseWhy(flags);
+      // The page jumping is its own postlude — but human only knows AI
+      // (vs the site itself) caused it if there's a prelude. Direction
+      // arrow + pixel count at the cursor is the cheapest signal.
+      const arrow: Record<string, string> = { up: "↑", down: "↓", left: "←", right: "→" };
+      const glyph = `${arrow[dir] || "↕"} scroll ${px}px`;
       await withSession(async (paw) => {
-        if (why) await paw.toast(why);
+        await paw.toast(why || glyph);
         await paw.scroll(dir, px);
       });
       await audit(withWhy(`scroll ${dir} ${px}px`, why));
